@@ -1,0 +1,179 @@
+# Local development stack: docker compose up --build
+# Production overrides: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+x-node-service: &node-service
+  build:
+    context: ./backend
+  env_file: .env
+  environment: &node-env
+    NODE_ENV: development
+    DATABASE_URL: postgresql://hustl:hustl@postgres:5432/hustl?schema=public
+    REDIS_URL: redis://redis:6379
+    KAFKA_BROKERS: kafka:9092
+    ELASTICSEARCH_URL: http://elasticsearch:9200
+    AI_SERVICE_URL: http://ai-backend:8000
+    USER_SERVICE_URL: http://user:4001
+    DEAL_SERVICE_URL: http://deal:4002
+    PAYMENT_SERVICE_URL: http://payment:4003
+    CREATOR_SERVICE_URL: http://creator-data:4004
+    SEARCH_SERVICE_URL: http://search:4005
+    NOTIFICATION_SERVICE_URL: http://notification:4006
+    ANALYTICS_SERVICE_URL: http://analytics:4007
+    MEDIA_SERVICE_URL: http://media:4008
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    kafka:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: hustl
+      POSTGRES_PASSWORD: hustl
+      POSTGRES_DB: hustl
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hustl"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  kafka:
+    image: bitnami/kafka:3.8
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      retries: 20
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [esdata:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      retries: 30
+
+  migrate:
+    build:
+      context: ./backend
+      target: build
+      args: { SERVICE: gateway }
+    command: npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+    environment:
+      DATABASE_URL: postgresql://hustl:hustl@postgres:5432/hustl?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: gateway } }
+    ports: ["4000:4000"]
+    environment: { <<: *node-env, PORT: 4000, CORS_ORIGINS: http://localhost:3000 }
+
+  user:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: user } }
+    environment: { <<: *node-env, PORT: 4001 }
+
+  deal:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: deal } }
+    environment: { <<: *node-env, PORT: 4002 }
+
+  payment:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: payment } }
+    environment: { <<: *node-env, PORT: 4003 }
+
+  creator-data:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: creator-data } }
+    environment: { <<: *node-env, PORT: 4004 }
+
+  search:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: search } }
+    environment: { <<: *node-env, PORT: 4005 }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      elasticsearch: { condition: service_healthy }
+
+  notification:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: notification } }
+    environment: { <<: *node-env, PORT: 4006 }
+
+  analytics:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: analytics } }
+    environment: { <<: *node-env, PORT: 4007 }
+
+  media:
+    <<: *node-service
+    build: { context: ./backend, args: { SERVICE: media } }
+    environment: { <<: *node-env, PORT: 4008, STORAGE_DRIVER: local, STORAGE_LOCAL_DIR: /data/storage }
+    volumes: [mediadata:/data/storage]
+
+  ai-backend:
+    build: { context: ./ai-backend }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://hustl:hustl@postgres:5432/hustl
+      REDIS_URL: redis://redis:6379/1
+      EMBEDDING_BACKEND: sentence-transformers
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  ai-worker:
+    build: { context: ./ai-backend }
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://hustl:hustl@postgres:5432/hustl
+      REDIS_URL: redis://redis:6379/1
+      EMBEDDING_BACKEND: sentence-transformers
+    depends_on: [ai-backend]
+    restart: unless-stopped
+
+  frontend:
+    build: { context: ./frontend }
+    env_file: .env
+    environment:
+      API_GATEWAY_URL: http://gateway:4000
+      NEXTAUTH_URL: http://localhost:3000
+    ports: ["3000:3000"]
+    depends_on: [gateway]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  esdata:
+  mediadata:

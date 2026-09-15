@@ -1,0 +1,45 @@
+{
+  "name": "@hustl/backend",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n gw,user,deal,pay,creator,search,notif,analytics,media -c blue,green,yellow,magenta,cyan,white,gray,red,blue \"npm:dev:gateway\" \"npm:dev:user\" \"npm:dev:deal\" \"npm:dev:payment\" \"npm:dev:creator\" \"npm:dev:search\" \"npm:dev:notification\" \"npm:dev:analytics\" \"npm:dev:media\"",
+    "dev:gateway": "npm run dev -w @hustl/gateway",
+    "dev:user": "npm run dev -w @hustl/user-service",
+    "dev:deal": "npm run dev -w @hustl/deal-service",
+    "dev:payment": "npm run dev -w @hustl/payment-service",
+    "dev:creator": "npm run dev -w @hustl/creator-data-service",
+    "dev:search": "npm run dev -w @hustl/search-service",
+    "dev:notification": "npm run dev -w @hustl/notification-service",
+    "dev:analytics": "npm run dev -w @hustl/analytics-service",
+    "dev:media": "npm run dev -w @hustl/media-service",
+    "build": "npm run db:generate && npm run build --workspaces --if-present",
+    "start": "concurrently -k -n gw,user,deal,pay,creator,search,notif,analytics,media \"npm:start:gateway\" \"npm:start:user\" \"npm:start:deal\" \"npm:start:payment\" \"npm:start:creator\" \"npm:start:search\" \"npm:start:notification\" \"npm:start:analytics\" \"npm:start:media\"",
+    "start:gateway": "npm run start -w @hustl/gateway",
+    "start:user": "npm run start -w @hustl/user-service",
+    "start:deal": "npm run start -w @hustl/deal-service",
+    "start:payment": "npm run start -w @hustl/payment-service",
+    "start:creator": "npm run start -w @hustl/creator-data-service",
+    "start:search": "npm run start -w @hustl/search-service",
+    "start:notification": "npm run start -w @hustl/notification-service",
+    "start:analytics": "npm run start -w @hustl/analytics-service",
+    "start:media": "npm run start -w @hustl/media-service",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "db:generate": "npm run generate -w @hustl/db",
+    "db:migrate": "npm run migrate:deploy -w @hustl/db",
+    "db:migrate:dev": "npm run migrate:dev -w @hustl/db"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

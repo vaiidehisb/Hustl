@@ -1,0 +1,22 @@
+{
+  "name": "@hustl/media-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsup src/index.ts --format cjs --target node20 --out-dir dist --clean --no-splitting --noExternal @hustl/common --noExternal @hustl/contracts --noExternal @hustl/db --external @prisma/client",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hustl/common": "*",
+    "@hustl/contracts": "*",
+    "@hustl/db": "*",
+    "zod": "^3.24.1",
+    "@aws-sdk/client-s3": "^3.717.0",
+    "@aws-sdk/s3-request-presigner": "^3.717.0",
+    "fastify": "^5.2.0",
+    "pdfkit": "^0.15.2"
+  },
+  "devDependencies": { "@types/pdfkit": "^0.13.8" }
+}

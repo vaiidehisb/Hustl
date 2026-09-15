@@ -1,0 +1,961 @@
+// hustl. — PostgreSQL schema (public schema).
+//
+// Physically one database for local/dev; each table is owned by exactly one
+// service (see the `// owner:` markers). Other services read through that
+// service's API, never by writing its tables. The AI backend owns the separate
+// `ai` schema (embeddings, parse cache) and manages it with its own migrations.
+//
+// Money is stored in whole INR rupees as Int; payment adapters convert to minor
+// units at the provider boundary.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  BRAND
+  CREATOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum BrandPlan {
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  YOUTUBE
+  TIKTOK
+  LINKEDIN
+  X
+}
+
+enum SocialAccountStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+enum SocialDataSource {
+  PHYLLO
+  SELF_REPORTED
+}
+
+enum BriefStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum BriefVisibility {
+  OPEN
+  DIRECT
+}
+
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  OFFERED
+  REJECTED
+  WITHDRAWN
+}
+
+enum PaymentMode {
+  COMPLETION
+  UPFRONT
+  MILESTONES
+}
+
+enum DealStatus {
+  OFFER_SENT
+  NEGOTIATING
+  AGREED
+  CONTRACT_SIGNED
+  FUNDED
+  IN_PROGRESS
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum Party {
+  BRAND
+  CREATOR
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  COUNTERED
+  DECLINED
+  WITHDRAWN
+  SUPERSEDED
+}
+
+enum MilestoneStatus {
+  PENDING
+  SUBMITTED
+  REVISION_REQUESTED
+  APPROVED
+  RELEASED
+  DISPUTED
+  REFUNDED
+}
+
+enum EscrowStatus {
+  UNFUNDED
+  FUNDING
+  FUNDED
+  PARTIALLY_RELEASED
+  RELEASED
+  REFUNDED
+  FROZEN
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  TEST
+}
+
+enum PaymentIntentStatus {
+  REQUIRES_PAYMENT
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum LedgerEntryType {
+  ESCROW_FUND
+  BRAND_FEE
+  PROCESSING_FEE
+  RELEASE
+  CREATOR_FEE
+  REFUND
+}
+
+enum PayoutStatus {
+  PENDING
+  ON_HOLD
+  PAID
+  FAILED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+}
+
+enum DisputeResolution {
+  RELEASE_TO_CREATOR
+  REFUND_TO_BRAND
+  SPLIT
+}
+
+enum FraudSubject {
+  CREATOR
+  DEAL
+}
+
+enum FraudSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum FraudFlagStatus {
+  OPEN
+  CLEARED
+  CONFIRMED
+}
+
+enum VerificationType {
+  CREATOR_IDENTITY
+  BRAND_BUSINESS
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MediaKind {
+  AVATAR
+  LOGO
+  PORTFOLIO
+  DELIVERABLE
+  CONTRACT_PDF
+  MEDIA_KIT
+  REPORT
+  DISPUTE_EVIDENCE
+}
+
+enum MediaStatus {
+  PENDING_UPLOAD
+  READY
+  FAILED
+}
+
+// ─── User service ────────────────────────────────────────────────────────────
+
+/// owner: user-service
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  name         String
+  passwordHash String?    @map("password_hash")
+  googleId     String?    @unique @map("google_id")
+  image        String?
+  role         UserRole?
+  status       UserStatus @default(ACTIVE)
+  kycStatus    KycStatus  @default(NONE) @map("kyc_status")
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  deletedAt    DateTime?  @map("deleted_at")
+
+  refreshTokens         RefreshToken[]
+  creator               CreatorProfile?
+  brand                 BrandProfile?
+  participants          ConversationParticipant[]
+  messages              Message[]
+  notifications         Notification[]
+  dealEvents            DealEvent[]
+  disputesRaised        Dispute[]             @relation("DisputeRaisedBy")
+  disputesResolved      Dispute[]             @relation("DisputeResolvedBy")
+  reviewsGiven          Review[]              @relation("ReviewAuthor")
+  reviewsReceived       Review[]              @relation("ReviewSubject")
+  media                 MediaAsset[]
+  verificationRequests  VerificationRequest[] @relation("VerificationSubject")
+  verificationsReviewed VerificationRequest[] @relation("VerificationReviewer")
+  fraudReviews          FraudFlag[]
+  offersProposed        DealOffer[]
+
+  @@map("users")
+}
+
+/// owner: user-service
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// owner: user-service (scores/metrics columns are written by creator-data-service)
+model CreatorProfile {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @map("user_id") @db.Uuid
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle            String    @unique
+  headline          String    @default("")
+  bio               String    @default("")
+  location          String    @default("")
+  country           String    @default("IN")
+  avatarUrl         String?   @map("avatar_url")
+  niches            String[]  @default([])
+  languages         String[]  @default([])
+  rateCard          Json      @default("[]") @map("rate_card") /// { deliverable: string, price: number }[]
+  portfolio         Json      @default("[]") /// { title: string, url: string, brand?: string, mediaId?: string }[]
+  available         Boolean   @default(true)
+  verifiedAt        DateTime? @map("verified_at")
+  // Aggregates normalised from connected social accounts (creator-data-service)
+  followersTotal    Int       @default(0) @map("followers_total")
+  engagementRate    Float?    @map("engagement_rate") /// follower-weighted, fraction (0.042 = 4.2%)
+  followerGrowth30d Float?    @map("follower_growth_30d")
+  // Delivery aggregates maintained from deal events
+  completedDeals    Int       @default(0) @map("completed_deals")
+  cancelledDeals    Int       @default(0) @map("cancelled_deals")
+  avgRating         Float?    @map("avg_rating")
+  onTimeRate        Float?    @map("on_time_rate")
+  revisionRate      Float?    @map("revision_rate")
+  avgResponseHours  Float?    @map("avg_response_hours")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  socialAccounts SocialAccount[]
+  score          CreatorScore?
+  applications   Application[]
+  deals          Deal[]
+  savedBy        SavedCreator[]
+  payoutAccount  PayoutAccount?
+  payouts        Payout[]
+  fraudFlags     FraudFlag[]
+
+  @@index([available])
+  @@index([followersTotal])
+  @@map("creator_profiles")
+}
+
+/// owner: user-service
+model BrandProfile {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @map("user_id") @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug        String    @unique
+  companyName String    @map("company_name")
+  logoUrl     String?   @map("logo_url")
+  website     String    @default("")
+  industry    String    @default("")
+  description String    @default("")
+  location    String    @default("")
+  size        String    @default("")
+  gstin       String?
+  plan        BrandPlan @default(STARTER)
+  verifiedAt  DateTime? @map("verified_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  briefs Brief[]
+  deals  Deal[]
+  saved  SavedCreator[]
+
+  @@map("brand_profiles")
+}
+
+/// owner: user-service
+model SavedCreator {
+  brandId   String         @map("brand_id") @db.Uuid
+  creatorId String         @map("creator_id") @db.Uuid
+  brand     BrandProfile   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  creator   CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@id([brandId, creatorId])
+  @@map("saved_creators")
+}
+
+/// owner: user-service
+model VerificationRequest {
+  id           String             @id @default(uuid()) @db.Uuid
+  userId       String             @map("user_id") @db.Uuid
+  user         User               @relation("VerificationSubject", fields: [userId], references: [id], onDelete: Cascade)
+  type         VerificationType
+  status       VerificationStatus @default(PENDING)
+  provider     String? /// KYC provider name when automated
+  providerRef  String?            @map("provider_ref")
+  details      Json               @default("{}") /// submitted business/identity fields (no raw documents)
+  documentIds  String[]           @default([]) @map("document_ids") /// media asset ids
+  reviewerId   String?            @map("reviewer_id") @db.Uuid
+  reviewer     User?              @relation("VerificationReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewerNote String?            @map("reviewer_note")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  reviewedAt   DateTime?          @map("reviewed_at")
+
+  @@index([status])
+  @@index([userId])
+  @@map("verification_requests")
+}
+
+// ─── Creator data service ────────────────────────────────────────────────────
+
+/// owner: creator-data-service
+model SocialAccount {
+  id                   String              @id @default(uuid()) @db.Uuid
+  creatorId            String              @map("creator_id") @db.Uuid
+  creator              CreatorProfile      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  platform             SocialPlatform
+  source               SocialDataSource
+  status               SocialAccountStatus @default(PENDING)
+  externalAccountId    String?             @map("external_account_id")
+  handle               String
+  profileUrl           String?             @map("profile_url")
+  followers            Int?
+  following            Int?
+  postsCount           Int?                @map("posts_count")
+  avgLikes             Float?              @map("avg_likes")
+  avgComments          Float?              @map("avg_comments")
+  avgViews             Float?              @map("avg_views")
+  engagementRate       Float?              @map("engagement_rate")
+  audienceDemographics Json?               @map("audience_demographics")
+  lastSyncedAt         DateTime?           @map("last_synced_at")
+  syncError            String?             @map("sync_error")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  snapshots SocialMetricSnapshot[]
+
+  @@unique([creatorId, platform])
+  @@map("social_accounts")
+}
+
+/// owner: creator-data-service
+model SocialMetricSnapshot {
+  id              String        @id @default(uuid()) @db.Uuid
+  socialAccountId String        @map("social_account_id") @db.Uuid
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  followers       Int
+  engagementRate  Float?        @map("engagement_rate")
+  avgLikes        Float?        @map("avg_likes")
+  avgComments     Float?        @map("avg_comments")
+  avgViews        Float?        @map("avg_views")
+  capturedAt      DateTime      @default(now()) @map("captured_at")
+
+  @@index([socialAccountId, capturedAt])
+  @@map("social_metric_snapshots")
+}
+
+/// owner: creator-data-service (values computed by the AI backend)
+model CreatorScore {
+  creatorId         String         @id @map("creator_id") @db.Uuid
+  creator           CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  trustScore        Int            @map("trust_score")
+  nicheAuthority    Int            @map("niche_authority")
+  reliabilityScore  Int            @map("reliability_score")
+  authenticityScore Int?           @map("authenticity_score")
+  modelVersion      String         @map("model_version")
+  signals           Json           @default("{}")
+  computedAt        DateTime       @default(now()) @map("computed_at")
+
+  @@map("creator_scores")
+}
+
+/// owner: creator-data-service (deal flags written by deal-service)
+model FraudFlag {
+  id         String          @id @default(uuid()) @db.Uuid
+  subject    FraudSubject
+  creatorId  String?         @map("creator_id") @db.Uuid
+  creator    CreatorProfile? @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  dealId     String?         @map("deal_id") @db.Uuid
+  deal       Deal?           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  code       String
+  label      String
+  severity   FraudSeverity
+  source     String /// RULE | ISOLATION_FOREST
+  details    Json            @default("{}")
+  status     FraudFlagStatus @default(OPEN)
+  reviewerId String?         @map("reviewer_id") @db.Uuid
+  reviewer   User?           @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNote String?         @map("review_note")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  reviewedAt DateTime?       @map("reviewed_at")
+
+  @@index([status, subject])
+  @@index([creatorId])
+  @@index([dealId])
+  @@map("fraud_flags")
+}
+
+// ─── Deal service ────────────────────────────────────────────────────────────
+
+/// owner: deal-service
+model Brief {
+  id               String          @id @default(uuid()) @db.Uuid
+  brandId          String          @map("brand_id") @db.Uuid
+  brand            BrandProfile    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  title            String
+  description      String
+  requirements     String          @default("")
+  niche            String          @default("")
+  platforms        SocialPlatform[] @default([])
+  deliverables     Json            @default("[]") /// { type: string, quantity: number }[]
+  minFollowers     Int             @default(0) @map("min_followers")
+  minEngagement    Float           @default(0) @map("min_engagement")
+  budgetPerCreator Int             @map("budget_per_creator")
+  currency         String          @default("INR")
+  creatorsNeeded   Int             @default(1) @map("creators_needed")
+  locations        String[]        @default([])
+  timeline         String          @default("")
+  audience         String          @default("")
+  visibility       BriefVisibility @default(OPEN)
+  status           BriefStatus     @default(DRAFT)
+  deadline         DateTime?
+  parsed           Json? /// brief-parser output incl. per-field confidence
+  publishedAt      DateTime?       @map("published_at")
+  closedAt         DateTime?       @map("closed_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  deletedAt        DateTime?       @map("deleted_at")
+
+  applications Application[]
+  deals        Deal[]
+
+  @@index([status, publishedAt])
+  @@index([brandId, status])
+  @@map("briefs")
+}
+
+/// owner: deal-service
+model Application {
+  id                String            @id @default(uuid()) @db.Uuid
+  briefId           String            @map("brief_id") @db.Uuid
+  brief             Brief             @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  creatorId         String            @map("creator_id") @db.Uuid
+  creator           CreatorProfile    @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  pitch             String
+  proposedRate      Int               @map("proposed_rate")
+  status            ApplicationStatus @default(APPLIED)
+  matchScore        Int?              @map("match_score")
+  matchReasons      String[]          @default([]) @map("match_reasons")
+  disqualifiers     String[]          @default([])
+  scoreModelVersion String?           @map("score_model_version")
+  scoredAt          DateTime?         @map("scored_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  deal         Deal?
+  conversation Conversation?
+
+  @@unique([briefId, creatorId])
+  @@index([creatorId, status])
+  @@map("applications")
+}
+
+/// owner: deal-service
+model Deal {
+  id                String      @id @default(uuid()) @db.Uuid
+  title             String
+  briefId           String?     @map("brief_id") @db.Uuid
+  brief             Brief?      @relation(fields: [briefId], references: [id], onDelete: SetNull)
+  applicationId     String?     @unique @map("application_id") @db.Uuid
+  application       Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  brandId           String      @map("brand_id") @db.Uuid
+  brand             BrandProfile @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  creatorId         String      @map("creator_id") @db.Uuid
+  creator           CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Restrict)
+  status            DealStatus  @default(OFFER_SENT)
+  /// Agreed terms (copied from the accepted offer)
+  amount            Int
+  currency          String      @default("INR")
+  paymentMode       PaymentMode @map("payment_mode")
+  deliverables      String      @default("")
+  dueDate           DateTime?   @map("due_date")
+  awaitingParty     Party?      @map("awaiting_party")
+  negotiationRounds Int         @default(0) @map("negotiation_rounds")
+  brandFeeRate      Float       @map("brand_fee_rate")
+  creatorFeeRate    Float       @map("creator_fee_rate")
+  processingFeeRate Float       @map("processing_fee_rate")
+  holdUntil         DateTime?   @map("hold_until")
+  completedAt       DateTime?   @map("completed_at")
+  cancelledAt       DateTime?   @map("cancelled_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  offers        DealOffer[]
+  contract      Contract?
+  milestones    Milestone[]
+  events        DealEvent[]
+  conversation  Conversation?
+  escrow        EscrowAccount?
+  paymentIntents PaymentIntent[]
+  ledger        LedgerEntry[]
+  payouts       Payout[]
+  disputes      Dispute[]
+  reviews       Review[]
+  fraudFlags    FraudFlag[]
+
+  @@index([brandId, status])
+  @@index([creatorId, status])
+  @@map("deals")
+}
+
+/// owner: deal-service — every offer and counter-offer (max 2 counter rounds).
+model DealOffer {
+  id           String      @id @default(uuid()) @db.Uuid
+  dealId       String      @map("deal_id") @db.Uuid
+  deal         Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  round        Int /// 0 = original offer, 1..2 = counter rounds
+  proposedBy   Party       @map("proposed_by")
+  proposedById String      @map("proposed_by_id") @db.Uuid
+  proposer     User        @relation(fields: [proposedById], references: [id], onDelete: Restrict)
+  amount       Int
+  paymentMode  PaymentMode @map("payment_mode")
+  milestones   Json /// { title, percent, dueDate? }[]
+  deliverables String      @default("")
+  dueDate      DateTime?   @map("due_date")
+  note         String?
+  status       OfferStatus @default(PENDING)
+  respondedAt  DateTime?   @map("responded_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@unique([dealId, round])
+  @@map("deal_offers")
+}
+
+/// owner: deal-service
+model Contract {
+  id                   String    @id @default(uuid()) @db.Uuid
+  dealId               String    @unique @map("deal_id") @db.Uuid
+  deal                 Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  version              Int       @default(1)
+  terms                Json /// structured clauses rendered to the parties
+  bodyHash             String    @map("body_hash") /// sha256 of canonical terms — what was signed
+  brandSignedAt        DateTime? @map("brand_signed_at")
+  brandSignerName      String?   @map("brand_signer_name")
+  brandSignerIp        String?   @map("brand_signer_ip")
+  creatorSignedAt      DateTime? @map("creator_signed_at")
+  creatorSignerName    String?   @map("creator_signer_name")
+  creatorSignerIp      String?   @map("creator_signer_ip")
+  pdfMediaId           String?   @map("pdf_media_id") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@map("contracts")
+}
+
+/// owner: deal-service
+model Milestone {
+  id            String          @id @default(uuid()) @db.Uuid
+  dealId        String          @map("deal_id") @db.Uuid
+  deal          Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  position      Int
+  title         String
+  percent       Int
+  amount        Int
+  dueDate       DateTime?       @map("due_date")
+  status        MilestoneStatus @default(PENDING)
+  revisionCount Int             @default(0) @map("revision_count")
+  revisionNote  String?         @map("revision_note")
+  submittedAt   DateTime?       @map("submitted_at")
+  approvedAt    DateTime?       @map("approved_at")
+  releasedAt    DateTime?       @map("released_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  submissions Deliverable[]
+  ledger      LedgerEntry[]
+  payout      Payout?
+  disputes    Dispute[]
+
+  @@unique([dealId, position])
+  @@map("milestones")
+}
+
+/// owner: deal-service — each submission attempt for a milestone.
+model Deliverable {
+  id           String    @id @default(uuid()) @db.Uuid
+  milestoneId  String    @map("milestone_id") @db.Uuid
+  milestone    Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  url          String?
+  mediaAssetId String?   @map("media_asset_id") @db.Uuid
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([milestoneId])
+  @@map("deliverables")
+}
+
+/// owner: deal-service — append-only audit log of state transitions.
+model DealEvent {
+  id         String      @id @default(uuid()) @db.Uuid
+  dealId     String      @map("deal_id") @db.Uuid
+  deal       Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  actorId    String?     @map("actor_id") @db.Uuid
+  actor      User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  type       String
+  fromStatus DealStatus? @map("from_status")
+  toStatus   DealStatus? @map("to_status")
+  data       Json        @default("{}")
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  @@index([dealId, createdAt])
+  @@map("deal_events")
+}
+
+/// owner: deal-service
+model Review {
+  id            String   @id @default(uuid()) @db.Uuid
+  dealId        String   @map("deal_id") @db.Uuid
+  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  authorId      String   @map("author_id") @db.Uuid
+  author        User     @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  subjectUserId String   @map("subject_user_id") @db.Uuid
+  subject       User     @relation("ReviewSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  rating        Int
+  comment       String   @default("")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([dealId, authorId])
+  @@index([subjectUserId])
+  @@map("reviews")
+}
+
+// ─── Payment service ─────────────────────────────────────────────────────────
+
+/// owner: payment-service
+model EscrowAccount {
+  id             String       @id @default(uuid()) @db.Uuid
+  dealId         String       @unique @map("deal_id") @db.Uuid
+  deal           Deal         @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  provider       PaymentProvider
+  status         EscrowStatus @default(UNFUNDED)
+  fundedAmount   Int          @default(0) @map("funded_amount")
+  releasedAmount Int          @default(0) @map("released_amount") /// gross, incl. creator fee
+  refundedAmount Int          @default(0) @map("refunded_amount")
+  frozenAt       DateTime?    @map("frozen_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("escrow_accounts")
+}
+
+/// owner: payment-service
+model PaymentIntent {
+  id               String              @id @default(uuid()) @db.Uuid
+  dealId           String              @map("deal_id") @db.Uuid
+  deal             Deal                @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  provider         PaymentProvider
+  providerIntentId String?             @map("provider_intent_id")
+  status           PaymentIntentStatus @default(REQUIRES_PAYMENT)
+  escrowAmount     Int                 @map("escrow_amount")
+  brandFee         Int                 @map("brand_fee")
+  processingFee    Int                 @map("processing_fee")
+  totalAmount      Int                 @map("total_amount")
+  currency         String              @default("INR")
+  clientSecret     String?             @map("client_secret") /// Stripe client secret / Razorpay order id for the checkout widget
+  idempotencyKey   String              @unique @map("idempotency_key")
+  failureReason    String?             @map("failure_reason")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@unique([provider, providerIntentId])
+  @@index([dealId])
+  @@map("payment_intents")
+}
+
+/// owner: payment-service — immutable money ledger.
+model LedgerEntry {
+  id          String          @id @default(uuid()) @db.Uuid
+  dealId      String          @map("deal_id") @db.Uuid
+  deal        Deal            @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  milestoneId String?         @map("milestone_id") @db.Uuid
+  milestone   Milestone?      @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+  type        LedgerEntryType
+  amount      Int
+  provider    PaymentProvider
+  providerRef String?         @map("provider_ref")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([dealId, createdAt])
+  @@map("ledger_entries")
+}
+
+/// owner: payment-service
+model PayoutAccount {
+  id                String         @id @default(uuid()) @db.Uuid
+  creatorId         String         @unique @map("creator_id") @db.Uuid
+  creator           CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  provider          PaymentProvider
+  providerAccountId String?        @map("provider_account_id")
+  status            String         @default("NOT_CONNECTED") /// NOT_CONNECTED | PENDING | ACTIVE | RESTRICTED
+  detailsSubmitted  Boolean        @default(false) @map("details_submitted")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  @@map("payout_accounts")
+}
+
+/// owner: payment-service
+model Payout {
+  id          String          @id @default(uuid()) @db.Uuid
+  dealId      String          @map("deal_id") @db.Uuid
+  deal        Deal            @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  milestoneId String          @unique @map("milestone_id") @db.Uuid
+  milestone   Milestone       @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+  creatorId   String          @map("creator_id") @db.Uuid
+  creator     CreatorProfile  @relation(fields: [creatorId], references: [id], onDelete: Restrict)
+  gross       Int
+  fee         Int
+  net         Int
+  status      PayoutStatus    @default(PENDING)
+  provider    PaymentProvider
+  providerRef String?         @map("provider_ref")
+  failureReason String?       @map("failure_reason")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  paidAt      DateTime?       @map("paid_at")
+
+  @@index([creatorId, status])
+  @@map("payouts")
+}
+
+/// owner: payment-service — webhook idempotency.
+model ProviderWebhookEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  provider    PaymentProvider
+  eventId     String          @map("event_id")
+  type        String
+  payload     Json
+  processedAt DateTime?       @map("processed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@unique([provider, eventId])
+  @@map("provider_webhook_events")
+}
+
+/// owner: payment-service (opened via deal-service)
+model Dispute {
+  id           String             @id @default(uuid()) @db.Uuid
+  dealId       String             @map("deal_id") @db.Uuid
+  deal         Deal               @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  milestoneId  String?            @map("milestone_id") @db.Uuid
+  milestone    Milestone?         @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  raisedById   String             @map("raised_by_id") @db.Uuid
+  raisedBy     User               @relation("DisputeRaisedBy", fields: [raisedById], references: [id], onDelete: Restrict)
+  reason       String
+  evidenceIds  String[]           @default([]) @map("evidence_ids")
+  status       DisputeStatus      @default(OPEN)
+  resolution   DisputeResolution?
+  splitCreatorPercent Int?        @map("split_creator_percent")
+  adminNote    String?            @map("admin_note")
+  resolvedById String?            @map("resolved_by_id") @db.Uuid
+  resolvedBy   User?              @relation("DisputeResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  resolvedAt   DateTime?          @map("resolved_at")
+
+  @@index([status])
+  @@index([dealId])
+  @@map("disputes")
+}
+
+// ─── Notification service (messaging + notifications) ────────────────────────
+
+/// owner: notification-service
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  dealId        String?   @unique @map("deal_id") @db.Uuid
+  deal          Deal?     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  applicationId String?   @unique @map("application_id") @db.Uuid
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  subject       String
+  lastMessageAt DateTime? @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+/// owner: notification-service
+model ConversationParticipant {
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id") @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime?    @map("last_read_at")
+  joinedAt       DateTime     @default(now()) @map("joined_at")
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+/// owner: notification-service
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String       @map("sender_id") @db.Uuid
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body           String
+  attachmentIds  String[]     @default([]) @map("attachment_ids")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  editedAt       DateTime?    @map("edited_at")
+  deletedAt      DateTime?    @map("deleted_at")
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+/// owner: notification-service
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String /// the event topic that produced it
+  title     String
+  body      String    @default("")
+  href      String?
+  eventId   String?   @map("event_id") /// outbox event id — idempotency
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@unique([userId, eventId])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+// ─── Media service ───────────────────────────────────────────────────────────
+
+/// owner: media-service
+model MediaAsset {
+  id         String      @id @default(uuid()) @db.Uuid
+  ownerId    String      @map("owner_id") @db.Uuid
+  owner      User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  kind       MediaKind
+  status     MediaStatus @default(PENDING_UPLOAD)
+  bucket     String
+  storageKey String      @unique @map("storage_key")
+  fileName   String      @map("file_name")
+  mimeType   String      @map("mime_type")
+  sizeBytes  Int?        @map("size_bytes")
+  checksum   String?
+  dealId     String?     @map("deal_id") @db.Uuid
+  createdAt  DateTime    @default(now()) @map("created_at")
+  readyAt    DateTime?   @map("ready_at")
+
+  @@index([ownerId, kind])
+  @@index([dealId])
+  @@map("media_assets")
+}
+
+// ─── Event bus (transactional outbox) ────────────────────────────────────────
+
+model OutboxEvent {
+  id          BigInt    @id @default(autoincrement())
+  topic       String
+  key         String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  @@index([topic, id])
+  @@index([publishedAt])
+  @@map("outbox_events")
+}
+
+model ConsumerOffset {
+  consumer    String
+  topic       String
+  lastEventId BigInt   @map("last_event_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@id([consumer, topic])
+  @@map("consumer_offsets")
+}

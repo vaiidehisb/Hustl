@@ -2,32 +2,33 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { cache } from "react"
-import { ArrowRight, BadgeCheck, Building2, CalendarDays, Globe, MapPin, Star, Users } from "lucide-react"
+import { ArrowRight, BadgeCheck, Building2, Globe, MapPin, Star, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Avatar, Pill } from "@/components/app/ui"
+import { Avatar } from "@/components/app/ui"
 import { Container } from "@/components/marketing/section"
-import { db, json } from "@/lib/db"
-import { getCurrentUser } from "@/lib/session"
-import { compact, inr, shortDate } from "@/lib/format"
+import { brands, isApiError } from "@/lib/api"
+import { getSessionUser } from "@/lib/auth/session"
+import { shortDate } from "@/lib/format"
 
-type Deliverable = { type: string; quantity?: number }
-
-const getBrand = cache((slug: string) =>
-  db.brandProfile.findUnique({
-    where: { slug: decodeURIComponent(slug).toLowerCase() },
-    include: {
-      user: { select: { id: true } },
-      briefs: { where: { status: "PUBLISHED" }, orderBy: { createdAt: "desc" }, take: 20 },
-    },
-  }),
-)
+const getBrand = cache(async (slug: string) => {
+  try {
+    return await brands.get(decodeURIComponent(slug))
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return null
+    throw err
+  }
+})
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const b = await getBrand(slug)
-  if (!b) return { title: "Brand not found" }
-  const description = b.description.slice(0, 160) || `${b.companyName} runs escrow-protected creator campaigns on hustl.`
-  return { title: b.companyName, description, openGraph: { title: b.companyName, description, images: b.logoUrl ? [b.logoUrl] : undefined } }
+  try {
+    const b = await getBrand(slug)
+    if (!b) return { title: "Brand not found" }
+    const description = b.description.slice(0, 160) || `${b.companyName} runs escrow-protected creator campaigns on hustl.`
+    return { title: b.companyName, description, openGraph: { title: b.companyName, description, images: b.logoUrl ? [b.logoUrl] : undefined } }
+  } catch {
+    return { title: "Brand" }
+  }
 }
 
 const hostname = (url: string) => {
@@ -40,24 +41,12 @@ const hostname = (url: string) => {
 
 export default async function BrandProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const brand = await getBrand(slug)
+  const [brand, viewer] = await Promise.all([getBrand(slug), getSessionUser()])
   if (!brand) notFound()
 
-  const [viewer, completed, reviews] = await Promise.all([
-    getCurrentUser(),
-    db.deal.count({ where: { brandId: brand.id, status: "COMPLETED" } }),
-    db.review.findMany({
-      where: { subjectUserId: brand.userId },
-      include: { author: { select: { name: true, image: true, creator: { select: { handle: true, avatarUrl: true } } } } },
-      orderBy: { createdAt: "desc" },
-      take: 12,
-    }),
-  ])
-
   const isCreator = viewer?.role === "CREATOR"
-  const briefHref = (id: string) => (isCreator ? `/creator/briefs/${id}` : "/auth/signup?role=CREATOR")
-  const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0
   const website = brand.website ? (brand.website.startsWith("http") ? brand.website : `https://${brand.website}`) : null
+  const { reviewStats } = brand
 
   return (
     <main className="pb-24">
@@ -113,9 +102,9 @@ export default async function BrandProfilePage({ params }: { params: Promise<{ s
 
           <dl className="mt-10 grid grid-cols-3 gap-3 sm:max-w-xl">
             {[
-              { k: "Live briefs", v: String(brand.briefs.length) },
-              { k: "Completed deals", v: String(completed) },
-              { k: "Creator rating", v: avgRating ? `${avgRating.toFixed(1)} ★` : "—" },
+              { k: "Live briefs", v: String(brand.openBriefs) },
+              { k: "Completed deals", v: String(brand.completedDeals) },
+              { k: "Creator rating", v: reviewStats.avgRating ? `${reviewStats.avgRating.toFixed(1)} ★` : "—" },
             ].map((s) => (
               <div key={s.k} className="rounded-2xl border bg-card px-4 py-3">
                 <dt className="text-xs text-muted-foreground">{s.k}</dt>
@@ -137,66 +126,30 @@ export default async function BrandProfilePage({ params }: { params: Promise<{ s
 
           <section>
             <h2 className="font-display text-xl font-bold">Live briefs</h2>
-            {brand.briefs.length === 0 ? (
+            {brand.openBriefs === 0 ? (
               <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">No open briefs right now. Check back soon.</p>
             ) : (
-              <ul className="mt-4 space-y-3">
-                {brand.briefs.map((b) => {
-                  const platforms = json<string[]>(b.platforms, [])
-                  const deliverables = json<Deliverable[]>(b.deliverables, [])
-                  return (
-                    <li key={b.id} className="rounded-2xl border bg-card p-5 transition hover:border-primary/40">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <h3 className="font-semibold">{b.title}</h3>
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{b.description}</p>
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {b.niche && <Pill tone="info">{b.niche}</Pill>}
-                            {platforms.map((p) => (
-                              <Pill key={p}>{p}</Pill>
-                            ))}
-                            {deliverables.slice(0, 3).map((d) => (
-                              <Pill key={d.type}>
-                                {d.quantity ?? 1}× {d.type}
-                              </Pill>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="shrink-0 sm:text-right">
-                          <div className="text-xs text-muted-foreground">Budget / creator</div>
-                          <div className="font-display text-xl font-bold tabular-nums">{b.budgetPerCreator ? inr(b.budgetPerCreator) : "Open"}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {b.creatorsNeeded} creator{b.creatorsNeeded === 1 ? "" : "s"}
-                            {b.minFollowers ? ` · ${compact(b.minFollowers)}+ followers` : ""}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <CalendarDays className="size-3.5" />
-                          {b.deadline ? `Apply by ${shortDate(b.deadline)}` : b.timeline || `Posted ${shortDate(b.createdAt)}`}
-                        </span>
-                        <Button asChild size="sm" className="rounded-full">
-                          <Link href={briefHref(b.id)}>
-                            {isCreator ? "View & apply" : "Sign up to apply"} <ArrowRight />
-                          </Link>
-                        </Button>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="mt-4 flex flex-col items-start gap-4 rounded-2xl border bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {brand.companyName} has {brand.openBriefs} open brief{brand.openBriefs === 1 ? "" : "s"}.
+                </p>
+                <Button asChild className="rounded-full">
+                  <Link href={isCreator ? `/creator/marketplace?q=${encodeURIComponent(brand.companyName)}` : "/auth/signup?role=CREATOR"}>
+                    {isCreator ? "View in marketplace" : "Sign up to apply"} <ArrowRight />
+                  </Link>
+                </Button>
+              </div>
             )}
           </section>
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <h2 className="font-display text-xl font-bold">Creator reviews</h2>
-          {reviews.length === 0 ? (
+          {brand.reviews.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No reviews yet.</p>
           ) : (
             <ul className="mt-4 space-y-3">
-              {reviews.map((r) => (
+              {brand.reviews.map((r) => (
                 <li key={r.id} className="rounded-2xl border bg-card p-4">
                   <div className="flex items-center gap-3">
                     <Avatar name={r.author.name} src={r.author.creator?.avatarUrl ?? r.author.image} size={32} />
@@ -219,6 +172,7 @@ export default async function BrandProfilePage({ params }: { params: Promise<{ s
               ))}
             </ul>
           )}
+          <p className="mt-6 text-xs text-muted-foreground">On hustl. since {shortDate(brand.memberSince)}</p>
         </aside>
       </Container>
     </main>

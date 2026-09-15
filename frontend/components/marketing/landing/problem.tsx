@@ -15,10 +15,9 @@ export function Problem() {
         <Reveal className="h-full">
           <div className="flex h-full flex-col rounded-3xl border bg-card p-8">
             <span className="text-sm font-semibold text-muted-foreground">For creators</span>
-            <div className="mt-6 font-display text-6xl font-extrabold tracking-tight sm:text-7xl">
-              47<span className="text-gradient">%</span>
-            </div>
-            <p className="mt-3 text-lg font-medium">of creator deals end without full payment.</p>
+            <p className="mt-6 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Doing the work is no <span className="text-gradient">guarantee of getting paid.</span>
+            </p>
             <ul className="mt-8 space-y-4 text-sm text-muted-foreground">
               <li className="flex gap-3">
                 <HandCoins className="size-5 shrink-0 text-warning" /> Net-60 “we’ll pay after the campaign” invoices that never clear.
@@ -32,10 +31,9 @@ export function Problem() {
         <Reveal delay={0.08} className="h-full">
           <div className="flex h-full flex-col rounded-3xl border bg-card p-8">
             <span className="text-sm font-semibold text-muted-foreground">For brands</span>
-            <div className="mt-6 font-display text-6xl font-extrabold tracking-tight sm:text-7xl">
-              3–6<span className="text-gradient"> wks</span>
-            </div>
-            <p className="mt-3 text-lg font-medium">spent finding and vetting creators for a single campaign.</p>
+            <p className="mt-6 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Finding the right creator <span className="text-gradient">takes weeks of guesswork.</span>
+            </p>
             <ul className="mt-8 space-y-4 text-sm text-muted-foreground">
               <li className="flex gap-3">
                 <SearchX className="size-5 shrink-0 text-warning" /> Inflated followers and engagement pods that don’t convert.
@@ -47,7 +45,6 @@ export function Problem() {
           </div>
         </Reveal>
       </div>
-      <p className="mt-4 text-center text-xs text-muted-foreground">Figures from hustl. creator and brand interviews; directional, not audited.</p>
     </Section>
   )
 }

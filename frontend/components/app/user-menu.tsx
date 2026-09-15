@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useQueryClient } from "@tanstack/react-query"
 import { signOut } from "next-auth/react"
 import { useTheme } from "next-themes"
 import { LogOut, Moon, Sun, Home } from "lucide-react"
@@ -13,9 +14,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { initials } from "@/lib/format"
+import { useUiStore } from "@/store/ui"
 
 export function UserMenu({ user, compact }: { user: { name: string; email: string; image: string | null }; compact?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme()
+  const qc = useQueryClient()
+
+  // NextAuth's signOut event revokes the refresh token via POST /auth/logout.
+  const onSignOut = async () => {
+    useUiStore.getState().reset()
+    qc.clear()
+    await signOut({ callbackUrl: "/" })
+  }
+
   const avatar = user.image ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={user.image} alt="" className="size-8 rounded-full object-cover" />
@@ -49,7 +60,7 @@ export function UserMenu({ user, compact }: { user: { name: string; email: strin
           {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
+        <DropdownMenuItem onSelect={() => void onSignOut()}>
           <LogOut className="size-4" /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

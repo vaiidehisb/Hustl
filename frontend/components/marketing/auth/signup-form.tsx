@@ -1,60 +1,63 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useForm, type FieldPath } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { signIn } from "next-auth/react"
 import { toast } from "sonner"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { registerAction } from "@/app/actions/auth"
 import { GoogleButton, OrDivider } from "@/components/marketing/auth/google-button"
+import { FieldError, FormAlert, PasswordField, TextField } from "@/components/marketing/auth/field"
 import { RolePicker, type Role } from "@/components/marketing/auth/role-picker"
 import { portalPath } from "@/components/marketing/portal"
+import { PASSWORD_HINT, signInErrorMessage, signUpSchema, toRegisterRequest, type SignUpValues } from "@/lib/validation/auth"
+
+const FIELDS = new Set<string>(["role", "name", "email", "password", "companyName", "handle"])
 
 export function SignUpForm({ googleEnabled, initialRole }: { googleEnabled: boolean; initialRole: Role | null }) {
   const router = useRouter()
-  const [role, setRole] = useState<Role | null>(initialRole)
-  const [form, setForm] = useState({ name: "", email: "", password: "", companyName: "", handle: "" })
-  const [show, setShow] = useState(false)
-  const [error, setError] = useState("")
-  const [pending, startTransition] = useTransition()
+  const [formError, setFormError] = useState("")
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    setError,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<SignUpValues>({
+    resolver: zodResolver(signUpSchema),
+    defaultValues: { role: initialRole ?? undefined, name: "", email: "", password: "", companyName: "", handle: "" },
+  })
+  const role = watch("role")
+  const handleValue = watch("handle")
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!role) {
-      setError("Choose whether you’re joining as a brand or a creator.")
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError("")
+    const res = await registerAction(toRegisterRequest(values))
+    if (!res.ok) {
+      const entries = Object.entries(res.fieldErrors ?? {})
+      const known = entries.filter(([k]) => FIELDS.has(k))
+      known.forEach(([k, message]) => setError(k as FieldPath<SignUpValues>, { type: "server", message }))
+      // Field-level errors (409 duplicate email, 422) show inline; everything else in the banner.
+      if (known.length === 0 || known.length < entries.length) setFormError(res.error)
       return
     }
-    setError("")
-    startTransition(async () => {
-      const res = await registerAction({
-        role,
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        companyName: role === "BRAND" ? form.companyName : undefined,
-        handle: role === "CREATOR" ? form.handle : undefined,
-      })
-      if (!res.ok) {
-        setError(res.error)
-        return
-      }
-      const login = await signIn("credentials", { email: form.email.trim().toLowerCase(), password: form.password, redirect: false })
-      if (!login || login.error) {
-        toast.success("Account created — please log in.")
-        router.push("/auth/signin")
-        return
-      }
-      toast.success("Welcome to hustl.!")
-      router.push(portalPath(role))
-      router.refresh()
-    })
-  }
+
+    const login = await signIn("credentials", { email: values.email, password: values.password, redirect: false })
+    if (!login?.ok || login.error) {
+      toast.success("Account created. Please log in.")
+      if (login?.error) toast.error(signInErrorMessage(login.error))
+      router.push("/auth/signin")
+      return
+    }
+    toast.success("Welcome to hustl.!")
+    router.replace(portalPath(res.data.role))
+    router.refresh()
+  })
 
   return (
     <div>
@@ -66,8 +69,11 @@ export function SignUpForm({ googleEnabled, initialRole }: { googleEnabled: bool
         </Link>
       </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-5">
-        <RolePicker value={role} onChange={setRole} />
+      <form onSubmit={onSubmit} className="mt-8 space-y-5" noValidate>
+        <div className="space-y-2">
+          <RolePicker value={role ?? null} onChange={(r) => setValue("role", r, { shouldValidate: true })} />
+          <FieldError id="role-error" message={errors.role?.message} />
+        </div>
 
         {googleEnabled && (
           <>
@@ -76,77 +82,32 @@ export function SignUpForm({ googleEnabled, initialRole }: { googleEnabled: bool
           </>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="name">Full name</Label>
-            <Input id="name" autoComplete="name" required value={form.name} onChange={set("name")} className="h-11" />
-          </div>
+        <div className="space-y-4">
+          <TextField label="Full name" autoComplete="name" error={errors.name?.message} {...register("name")} />
 
           {role === "BRAND" && (
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="companyName">Company or brand name</Label>
-              <Input id="companyName" autoComplete="organization" required value={form.companyName} onChange={set("companyName")} className="h-11" placeholder="Glow Lab" />
-            </div>
+            <TextField label="Company or brand name" autoComplete="organization" placeholder="Your company" error={errors.companyName?.message} {...register("companyName")} />
           )}
           {role === "CREATOR" && (
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="handle">Creator handle</Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-sm text-muted-foreground">@</span>
-                <Input
-                  id="handle"
-                  required
-                  value={form.handle}
-                  onChange={(e) => setForm((f) => ({ ...f, handle: e.target.value.replace(/^@/, "").toLowerCase() }))}
-                  className="h-11 pl-7"
-                  placeholder="ananya.creates"
-                  pattern="[a-z0-9._]{3,30}"
-                  title="3–30 characters: lowercase letters, numbers, dots or underscores"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">Your public profile will live at hustl.app/creators/{form.handle || "handle"}</p>
-            </div>
+            <TextField
+              label="Creator handle"
+              prefix="@"
+              placeholder="yourhandle"
+              error={errors.handle?.message}
+              hint={`Optional. Your public profile will live at hustl.app/creators/${handleValue?.replace(/^@/, "").toLowerCase() || "handle"}`}
+              {...register("handle", { setValueAs: (v: string) => v.replace(/^@/, "").toLowerCase() })}
+            />
           )}
 
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="email">Work email</Label>
-            <Input id="email" type="email" autoComplete="email" required value={form.email} onChange={set("email")} className="h-11" />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={show ? "text" : "password"}
-                autoComplete="new-password"
-                required
-                minLength={8}
-                value={form.password}
-                onChange={set("password")}
-                className="h-11 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                className="absolute inset-y-0 right-0 grid w-10 place-items-center text-muted-foreground hover:text-foreground"
-                aria-label={show ? "Hide password" : "Show password"}
-              >
-                {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground">At least 8 characters.</p>
-          </div>
+          <TextField label="Work email" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} />
+          <PasswordField label="Password" autoComplete="new-password" error={errors.password?.message} hint={PASSWORD_HINT} {...register("password")} />
         </div>
 
-        {error && (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        <FormAlert message={formError} />
 
-        <Button type="submit" className="h-11 w-full" disabled={pending}>
-          {pending && <Loader2 className="animate-spin" />}
-          {pending ? "Creating account…" : role === "BRAND" ? "Create brand account" : role === "CREATOR" ? "Create creator account" : "Create account"}
+        <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
+          {isSubmitting && <Loader2 className="animate-spin" />}
+          {isSubmitting ? "Creating account…" : role === "BRAND" ? "Create brand account" : role === "CREATOR" ? "Create creator account" : "Create account"}
         </Button>
       </form>
     </div>

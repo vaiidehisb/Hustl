@@ -7,7 +7,6 @@ import { TwoSided } from "@/components/marketing/landing/two-sided"
 import { AiSection } from "@/components/marketing/landing/ai-section"
 import { PaymentModes } from "@/components/marketing/landing/payment-modes"
 import { PricingTeaser } from "@/components/marketing/landing/pricing-teaser"
-import { Testimonials } from "@/components/marketing/landing/testimonials"
 import { Faq, type FaqItem } from "@/components/marketing/faq"
 import { FinalCta } from "@/components/marketing/final-cta"
 import { CREATOR_FEE, PLAN_BRAND_FEE, PROCESSING_FEE } from "@/lib/payments/fees"
@@ -56,7 +55,6 @@ export default function Home() {
       <TwoSided />
       <AiSection />
       <PaymentModes />
-      <Testimonials />
       <PricingTeaser />
       <Faq items={FAQ} />
       <FinalCta />

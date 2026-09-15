@@ -1,114 +1,47 @@
-// API Gateway — the only backend entry point for clients.
-// Responsibilities: routing, JWT pre-verification, rate limiting, CORS,
-// request ids, blocking internal routes. Services still authorise every call.
-// (Kong is the documented production gateway; this service implements the
-// same routing contract and is what docker-compose runs.)
-
-import Fastify from "fastify"
-import cors from "@fastify/cors"
-import helmet from "@fastify/helmet"
-import rateLimit from "@fastify/rate-limit"
-import proxy from "@fastify/http-proxy"
-import { AppError, loadConfig, loggerOptions, ok, registerErrorHandler, serviceUrl, SERVICE_PORTS, verifyAccessToken } from "@hustl/common"
+// API Gateway entry point — see app.ts for routing, auth pre-checks and rate limits.
+import { loadConfig, SERVICE_PORTS } from "@hustl/common"
 import { z } from "zod"
+import { buildGateway } from "./app"
 
 const config = loadConfig({
   CORS_ORIGINS: z.string().default("http://localhost:3000"),
-  RATE_LIMIT_PER_MINUTE: z.coerce.number().default(300),
+  RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(300),
+  AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  /**
+   * "false" (default: client IP = socket address), "true", a hop count ("1" behind one load balancer)
+   * or a comma-separated list of trusted proxy IPs/CIDRs. Over-trusting lets clients spoof IPs past rate limits.
+   */
+  TRUST_PROXY: z.string().default("false"),
 })
 
-type Service = keyof typeof SERVICE_PORTS
-
-/** prefix → owning service. Order matters: most specific first. */
-export const ROUTES: [prefix: string, service: Service][] = [
-  ["/admin/users", "user"],
-  ["/admin/verifications", "user"],
-  ["/admin/disputes", "payment"],
-  ["/admin/fraud-flags", "creator"],
-  ["/admin/metrics", "analytics"],
-  ["/auth", "user"],
-  ["/users", "user"],
-  ["/creators", "user"],
-  ["/brands", "user"],
-  ["/verifications", "user"],
-  ["/briefs", "deal"],
-  ["/applications", "deal"],
-  ["/deals", "deal"],
-  ["/payments", "payment"],
-  ["/social", "creator"],
-  ["/search", "search"],
-  ["/notifications", "notification"],
-  ["/conversations", "notification"],
-  ["/analytics", "analytics"],
-  ["/media", "media"],
-]
+function parseTrustProxy(value: string): boolean | number | string {
+  const v = value.trim().toLowerCase()
+  if (v === "true") return true
+  if (v === "" || v === "false") return false
+  if (/^\d+$/.test(v)) return Number(v)
+  return value
+}
 
 async function main() {
-  const app = Fastify({ logger: loggerOptions("gateway"), trustProxy: true, genReqId: () => crypto.randomUUID() })
-  registerErrorHandler(app)
-
-  await app.register(helmet, { global: true })
-  await app.register(cors, { origin: config.CORS_ORIGINS.split(","), credentials: true })
-  await app.register(rateLimit, {
-    max: config.RATE_LIMIT_PER_MINUTE,
-    timeWindow: "1 minute",
-    keyGenerator: (req) => (req.headers.authorization ? `u:${req.headers.authorization.slice(-24)}` : `ip:${req.ip}`),
-    errorResponseBuilder: () => new AppError("RATE_LIMITED", "Too many requests — slow down and retry shortly").toBody(),
+  const app = await buildGateway({
+    corsOrigins: config.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean),
+    rateLimitPerMinute: config.RATE_LIMIT_PER_MINUTE,
+    authRateLimitPerMinute: config.AUTH_RATE_LIMIT_PER_MINUTE,
+    trustProxy: parseTrustProxy(config.TRUST_PROXY),
+    logger: true,
   })
 
-  app.addHook("onRequest", async (req) => {
-    const path = req.url.split("?")[0]
-    // Internal and AI routes are never reachable from outside.
-    if (path.startsWith("/internal") || path.includes("/internal/") || path.startsWith("/ai")) throw new AppError("NOT_FOUND", "Route not found")
-    // Reject bad/expired tokens early; services re-verify and authorise.
-    const auth = req.headers.authorization
-    if (auth?.startsWith("Bearer ")) verifyAccessToken(auth.slice(7))
-    req.headers["x-request-id"] = req.id
-  })
-
-  // Stricter limit on credential endpoints.
-  app.register(async (scope) => {
-    await scope.register(rateLimit, { max: 20, timeWindow: "1 minute", keyGenerator: (req) => `auth:${req.ip}` })
-  })
-
-  app.get("/health", async () => {
-    const services = await Promise.all(
-      (Object.keys(SERVICE_PORTS) as Service[])
-        .filter((s) => s !== "gateway")
-        .map(async (s) => {
-          try {
-            const res = await fetch(`${serviceUrl(s)}/health`, { signal: AbortSignal.timeout(2000) })
-            return [s, res.ok ? "ok" : `degraded (${res.status})`] as const
-          } catch {
-            return [s, "down"] as const
-          }
-        }),
-    )
-    return ok({ service: "gateway", services: Object.fromEntries(services) })
-  })
-
-  for (const [prefix, service] of ROUTES) {
-    await app.register(proxy, {
-      upstream: serviceUrl(service),
-      prefix,
-      rewritePrefix: prefix,
-      http2: false,
-      replyOptions: {
-        onError: (reply, { error }) => {
-          reply.log.error({ err: error, service }, "upstream error")
-          const timeout = (error as { code?: string }).code === "UND_ERR_HEADERS_TIMEOUT"
-          reply
-            .status(timeout ? 504 : 503)
-            .send(new AppError(timeout ? "TIMEOUT" : "SERVICE_UNAVAILABLE", `${service} service is ${timeout ? "not responding" : "unavailable"}`).toBody())
-        },
-      },
-    })
+  const shutdown = async () => {
+    await app.close()
+    process.exit(0)
   }
-
-  // Real-time channel (messages, notifications) served by the notification service.
-  await app.register(proxy, { upstream: serviceUrl("notification"), prefix: "/socket.io", rewritePrefix: "/socket.io", websocket: true })
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
 
   await app.listen({ port: Number(process.env.PORT ?? SERVICE_PORTS.gateway), host: "0.0.0.0" })
 }
 
-main()
+main().catch((err) => {
+  console.error("gateway failed to start", err)
+  process.exit(1)
+})

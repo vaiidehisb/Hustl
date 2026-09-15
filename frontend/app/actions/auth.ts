@@ -1,119 +1,58 @@
 "use server"
 
-import bcrypt from "bcryptjs"
-import { getServerSession } from "next-auth"
-import { z } from "zod"
-import { authOptions } from "@/lib/auth"
-import { db } from "@/lib/db"
-import { slugify } from "@/lib/format"
-import { run, ValidationError, type ActionResult } from "@/app/actions/result"
+import { chooseRoleRequest, registerRequest, type Role } from "@hustl/contracts"
+import { auth, users } from "@/lib/api"
+import { isApiError } from "@/lib/api/errors"
+import { toFormError, validationFailure, type FormResult } from "@/lib/api/form-errors"
+import { toSessionUser } from "@/lib/auth/refresh"
+import { readSessionToken, writeSessionToken } from "@/lib/auth/token"
 
-const HANDLE_RE = /^[a-z0-9._]{3,30}$/
-
-const roleSchema = z.enum(["BRAND", "CREATOR"])
-
-const profileFields = {
-  role: roleSchema,
-  companyName: z.string().trim().max(80).optional(),
-  handle: z.string().trim().max(31).optional(),
-}
-
-const registerSchema = z.object({
-  name: z.string().trim().min(2, "Enter your full name.").max(80),
-  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
-  password: z.string().min(8, "Password must be at least 8 characters.").max(128),
-  ...profileFields,
-})
-
-const onboardingSchema = z.object(profileFields)
-
-export type RegisterInput = z.input<typeof registerSchema>
-export type OnboardingInput = z.input<typeof onboardingSchema>
-
-function firstIssue(err: z.ZodError) {
-  return err.issues[0]?.message ?? "Please check the form and try again."
-}
-
-function normaliseHandle(raw: string | undefined) {
-  const handle = (raw ?? "").trim().replace(/^@/, "").toLowerCase()
-  if (!HANDLE_RE.test(handle)) throw new ValidationError("Handles are 3–30 characters: lowercase letters, numbers, dots or underscores.")
-  return handle
-}
-
-async function uniqueBrandSlug(companyName: string) {
-  const base = slugify(companyName) || "brand"
-  let slug = base
-  for (let i = 2; await db.brandProfile.findUnique({ where: { slug }, select: { id: true } }); i++) slug = `${base}-${i}`
-  return slug
-}
-
-/** Validates the role-specific part and returns the nested profile create. */
-async function profileData(role: "BRAND" | "CREATOR", companyName?: string, rawHandle?: string) {
-  if (role === "BRAND") {
-    const name = (companyName ?? "").trim()
-    if (name.length < 2) throw new ValidationError("Enter your company or brand name.")
-    return { brand: { create: { companyName: name, slug: await uniqueBrandSlug(name) } } }
+/** POST /auth/register. The client then calls `signIn("credentials")` to start the session. */
+export async function registerAction(input: unknown): Promise<FormResult<{ role: Role }>> {
+  const parsed = registerRequest.safeParse(input)
+  if (!parsed.success) return validationFailure(parsed.error)
+  try {
+    const session = await auth.register(parsed.data)
+    return { ok: true, data: { role: session.user.role ?? parsed.data.role } }
+  } catch (err) {
+    return toFormError(err)
   }
-  const handle = normaliseHandle(rawHandle)
-  const taken = await db.creatorProfile.findUnique({ where: { handle }, select: { id: true } })
-  if (taken) throw new ValidationError(`@${handle} is already taken. Try another handle.`)
-  return { creator: { create: { handle } } }
 }
 
-function isUniqueViolation(err: unknown) {
-  return typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "P2002"
-}
+/**
+ * POST /users/me/role for users without a role (Google sign-ups). The new access token
+ * (carrying the role) is written into the session cookie; the client then calls `update()`.
+ */
+export async function completeOnboardingAction(input: unknown): Promise<FormResult<{ role: Role }>> {
+  const parsed = chooseRoleRequest.safeParse(input)
+  if (!parsed.success) return validationFailure(parsed.error)
 
-export async function registerAction(input: RegisterInput): Promise<ActionResult<{ role: string }>> {
-  const parsed = registerSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) }
-  const { name, email, password, role, companyName, handle } = parsed.data
+  const token = await readSessionToken()
+  if (!token?.accessToken || token.error) return { ok: false, code: "UNAUTHORIZED", error: "Your session expired. Please log in again." }
 
-  return run(async () => {
-    const existing = await db.user.findUnique({ where: { email }, select: { id: true } })
-    if (existing) throw new ValidationError("An account with this email already exists. Log in instead.")
-
-    const profile = await profileData(role, companyName, handle)
-    const passwordHash = await bcrypt.hash(password, 10)
-    try {
-      await db.user.create({ data: { name, email, passwordHash, role, ...profile } })
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new ValidationError("That email, handle or company name was just taken. Please try again.")
-      throw err
+  try {
+    const res = await users.chooseRole(parsed.data, { token: token.accessToken })
+    await writeSessionToken({
+      ...token,
+      user: toSessionUser(res.user),
+      accessToken: res.accessToken,
+      accessTokenExpiresAt: Date.parse(res.accessTokenExpiresAt),
+      error: undefined,
+    })
+    return { ok: true, data: { role: res.user.role ?? parsed.data.role } }
+  } catch (err) {
+    // Role already chosen (e.g. double submit): sync the session with the server's view.
+    if (isApiError(err) && err.status === 409 && !err.field) {
+      try {
+        const me = await users.me({ token: token.accessToken })
+        if (me.user.role) {
+          await writeSessionToken({ ...token, user: toSessionUser(me.user) })
+          return { ok: true, data: { role: me.user.role } }
+        }
+      } catch {
+        // fall through to the original error
+      }
     }
-    return { role }
-  })
-}
-
-/** Google (or other OAuth) users arrive without a role; this sets it once. */
-export async function completeOnboardingAction(input: OnboardingInput): Promise<ActionResult<{ role: string }>> {
-  const parsed = onboardingSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) }
-  const { role, companyName, handle } = parsed.data
-
-  return run(async () => {
-    const session = await getServerSession(authOptions)
-    const email = session?.user?.email?.toLowerCase()
-    if (!email) throw new ValidationError("Your session expired. Please log in again.")
-
-    const user = await db.user.findUnique({ where: { email }, include: { brand: true, creator: true } })
-    if (!user) throw new ValidationError("We couldn’t find your account. Please log in again.")
-    if (user.role) return { role: user.role }
-
-    const profile = await profileData(role, companyName, handle)
-    try {
-      await db.user.update({
-        where: { id: user.id },
-        data: {
-          role,
-          // Skip creating a profile that somehow already exists.
-          ...(role === "BRAND" && user.brand ? {} : role === "CREATOR" && user.creator ? {} : profile),
-        },
-      })
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new ValidationError("That handle or company name was just taken. Please try again.")
-      throw err
-    }
-    return { role }
-  })
+    return toFormError(err)
+  }
 }

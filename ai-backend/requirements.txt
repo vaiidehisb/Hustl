@@ -1,0 +1,14 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30
+pydantic>=2.7,<3
+pydantic-settings>=2.3
+asyncpg>=0.29
+numpy>=1.26
+scikit-learn>=1.5
+sentence-transformers>=3.0
+anthropic>=1.0
+celery>=5.4
+redis>=5.0
+# optional: v2 scoring model registry / training
+mlflow>=2.14
+xgboost>=2.0

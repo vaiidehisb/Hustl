@@ -1,7 +1,7 @@
 // Profile, verification and admin-user contracts — served by user-service (see backend/API.md).
 import { z } from "zod"
-import { handle, inrAmount, NICHES, pageQuery, ROLES, SOCIAL_PLATFORMS, type Role, type SocialPlatform } from "./common"
-import { companyName, type KycStatus, type PublicUser, type UserStatus } from "./auth"
+import { handle, inrAmount, NICHES, pageQuery, ROLES, type Role, type SocialPlatform } from "./common"
+import { brandCompanyName, type KycStatus, type PublicUser, type UserStatus } from "./auth"
 
 const httpUrl = z
   .string()
@@ -62,7 +62,7 @@ const gstin = z
 /** PUT /brands/me. Partial update; the slug is permanent so public links stay stable. */
 export const updateBrandProfileRequest = z
   .object({
-    companyName: companyName.optional(),
+    companyName: brandCompanyName.optional(),
     logoUrl: httpUrl.nullable().optional(),
     website: z.union([httpUrl, z.literal("")]).optional(),
     industry: shortText(80).optional(),
@@ -124,7 +124,7 @@ export type InternalUsersBatchRequest = z.infer<typeof internalUsersBatchRequest
 // ─── Response DTOs ───────────────────────────────────────────────────────────
 
 /** The creator's own full profile (GET /creators/me). */
-export type CreatorProfile = {
+export type OwnCreatorProfile = {
   id: string
   userId: string
   handle: string
@@ -150,7 +150,7 @@ export type CreatorProfile = {
 }
 
 /** The brand's own full profile (GET /brands/me). */
-export type BrandProfile = {
+export type OwnBrandProfile = {
   id: string
   userId: string
   slug: string
@@ -175,7 +175,7 @@ export type BrandCompletionField = "companyName" | "logo" | "website" | "industr
 export type ProfileCompletion = { percent: number; missing: (CreatorCompletionField | BrandCompletionField | "role")[] }
 
 /** GET /users/me */
-export type MeResponse = { user: PublicUser; creator: CreatorProfile | null; brand: BrandProfile | null; profileCompletion: ProfileCompletion }
+export type MeResponse = { user: PublicUser; creator: OwnCreatorProfile | null; brand: OwnBrandProfile | null; profileCompletion: ProfileCompletion }
 
 export type CreatorScoreSummary = {
   trustScore: number
@@ -327,9 +327,8 @@ export type InternalUser = {
 }
 
 /** GET /internal/creators/:id and /internal/creators/by-user/:userId */
-export type InternalCreator = CreatorProfile & { user: InternalUser; deleted: boolean }
+export type InternalCreator = OwnCreatorProfile & { user: InternalUser; deleted: boolean }
 
 /** GET /internal/brands/:id and /internal/brands/by-user/:userId */
-export type InternalBrand = BrandProfile & { user: InternalUser; deleted: boolean }
+export type InternalBrand = OwnBrandProfile & { user: InternalUser; deleted: boolean }
 
-export { SOCIAL_PLATFORMS as PROFILE_SOCIAL_PLATFORMS }

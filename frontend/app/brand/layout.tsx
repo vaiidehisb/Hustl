@@ -1,30 +1,16 @@
 import { AppShell } from "@/components/app/shell"
 import type { NavItem } from "@/components/app/sidebar-nav"
-import { db } from "@/lib/db"
-import { requireBrand } from "@/lib/session"
+import { requireRole } from "@/lib/auth/session"
 
 export default async function BrandLayout({ children }: { children: React.ReactNode }) {
-  const { user, brand } = await requireBrand()
-  const [needsAction, newApplications] = await Promise.all([
-    db.deal.count({
-      where: {
-        brandId: brand.id,
-        OR: [
-          { status: "OFFER_SENT", awaitingParty: "BRAND" },
-          { status: "CONTRACT_PENDING", brandSignedAt: null },
-          { status: "CONTRACT_SIGNED" },
-          { milestones: { some: { status: "SUBMITTED" } } },
-        ],
-      },
-    }),
-    db.application.count({ where: { brief: { brandId: brand.id }, status: "APPLIED" } }),
-  ])
+  const user = await requireRole("BRAND", "/brand")
+  // TODO(portal-rewire): "needs action" deal / new-application badges from the deal API.
   const items: NavItem[] = [
     { href: "/brand", label: "Dashboard", icon: "LayoutDashboard", exact: true },
     { href: "/brand/discover", label: "Discover creators", icon: "Sparkles" },
-    { href: "/brand/briefs", label: "Briefs", icon: "FileText", badge: newApplications },
-    { href: "/brand/deals", label: "Deals", icon: "Handshake", badge: needsAction },
-    { href: "/brand/messages", label: "Messages", icon: "MessagesSquare" },
+    { href: "/brand/briefs", label: "Briefs", icon: "FileText" },
+    { href: "/brand/deals", label: "Deals", icon: "Handshake" },
+    { href: "/brand/messages", label: "Messages", icon: "MessagesSquare", liveBadge: "messages" },
     { href: "/brand/payments", label: "Payments & escrow", icon: "Wallet" },
     { href: "/brand/analytics", label: "Analytics", icon: "ChartNoAxesCombined" },
     { href: "/brand/settings", label: "Settings", icon: "Settings" },

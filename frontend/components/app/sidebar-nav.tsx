@@ -8,12 +8,16 @@ import { Menu } from "lucide-react"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
+import { useUiStore, type UnreadKind } from "@/store/ui"
 
 // Icons are passed by name so server layouts can declare nav items.
-export type NavItem = { href: string; label: string; icon: keyof typeof Icons; badge?: number; exact?: boolean }
+// `liveBadge` shows a realtime unread count from the UI store instead of a static `badge`.
+export type NavItem = { href: string; label: string; icon: keyof typeof Icons; badge?: number; liveBadge?: UnreadKind; exact?: boolean }
 
-function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
+function NavLinks({ items: rawItems, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
   const pathname = usePathname()
+  const unread = useUiStore((s) => s.unread)
+  const items = rawItems.map((i) => (i.liveBadge ? { ...i, badge: unread[i.liveBadge] } : i))
   return (
     <nav className="flex flex-col gap-0.5 px-3 py-2">
       {items.map((item) => {

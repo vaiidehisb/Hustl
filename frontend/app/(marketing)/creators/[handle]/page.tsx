@@ -2,33 +2,34 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { cache } from "react"
-import { ArrowRight, BadgeCheck, Briefcase, Clock, ExternalLink, MapPin, Star } from "lucide-react"
+import { ArrowRight, BadgeCheck, Briefcase, ExternalLink, MapPin, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, Pill, ScoreRing } from "@/components/app/ui"
 import { Container } from "@/components/marketing/section"
-import { db, json } from "@/lib/db"
-import { getCurrentUser } from "@/lib/session"
-import { benchmarkER } from "@/lib/ai/scoring"
+import { creators, isApiError } from "@/lib/api"
+import { getSessionUser } from "@/lib/auth/session"
 import { compact, inr, pct, shortDate } from "@/lib/format"
 
-type Platform = { platform: string; handle?: string; followers?: number; engagementRate?: number; avgViews?: number }
-type RateItem = { deliverable: string; price: number }
-type PortfolioItem = { title: string; url?: string; brand?: string }
-
-const getCreator = cache((handle: string) =>
-  db.creatorProfile.findUnique({
-    where: { handle: decodeURIComponent(handle).replace(/^@/, "").toLowerCase() },
-    include: { user: { select: { id: true, name: true, image: true } } },
-  }),
-)
+const getCreator = cache(async (handle: string) => {
+  try {
+    return await creators.get(decodeURIComponent(handle))
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return null
+    throw err
+  }
+})
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
   const { handle } = await params
-  const c = await getCreator(handle)
-  if (!c) return { title: "Creator not found" }
-  const title = `${c.user.name} (@${c.handle})`
-  const description = c.headline || c.bio.slice(0, 160) || `Work with ${c.user.name} on hustl. — escrow-protected brand deals.`
-  return { title, description, openGraph: { title, description, images: c.avatarUrl ? [c.avatarUrl] : undefined } }
+  try {
+    const c = await getCreator(handle)
+    if (!c) return { title: "Creator not found" }
+    const title = `${c.name} (@${c.handle})`
+    const description = c.headline || c.bio.slice(0, 160) || `Work with ${c.name} on hustl.: escrow-protected brand deals.`
+    return { title, description, openGraph: { title, description, images: c.avatarUrl ? [c.avatarUrl] : undefined } }
+  } catch {
+    return { title: "Creator" }
+  }
 }
 
 function Stars({ rating }: { rating: number }) {
@@ -43,49 +44,32 @@ function Stars({ rating }: { rating: number }) {
 
 export default async function CreatorProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
-  const creator = await getCreator(handle)
+  const [creator, viewer] = await Promise.all([getCreator(handle), getSessionUser()])
   if (!creator) notFound()
 
-  const [viewer, reviews, completedCount] = await Promise.all([
-    getCurrentUser(),
-    db.review.findMany({
-      where: { subjectUserId: creator.userId },
-      include: { author: { select: { name: true, image: true, brand: { select: { companyName: true, slug: true, logoUrl: true } } } } },
-      orderBy: { createdAt: "desc" },
-      take: 12,
-    }),
-    db.deal.count({ where: { creatorId: creator.id, status: "COMPLETED" } }),
-  ])
-
-  const name = creator.user.name
-  const platforms = json<Platform[]>(creator.platforms, [])
-  const rateCard = json<RateItem[]>(creator.rateCard, [])
-  const portfolio = json<PortfolioItem[]>(creator.portfolio, [])
-  const niches = json<string[]>(creator.niches, [])
-  const languages = json<string[]>(creator.languages, [])
-  const completed = Math.max(completedCount, creator.completedDeals)
-  const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : creator.avgRating
-
+  const firstName = creator.name.split(" ")[0]
+  const { reviewStats, scores } = creator
   const ctaHref = viewer?.role === "BRAND" ? `/brand/discover?q=${encodeURIComponent(creator.handle)}` : "/auth/signup?role=BRAND"
-  const scores = [
-    { label: "Trust", score: creator.trustScore },
-    { label: "Reliability", score: creator.reliabilityScore },
-    { label: "Niche authority", score: creator.nicheAuthority },
-    { label: "Authenticity", score: creator.authenticityScore },
-  ]
+  const scoreRings = scores
+    ? [
+        { label: "Trust", score: scores.trustScore },
+        { label: "Reliability", score: scores.reliabilityScore },
+        { label: "Niche authority", score: scores.nicheAuthority },
+        ...(scores.authenticityScore !== null ? [{ label: "Authenticity", score: scores.authenticityScore }] : []),
+      ]
+    : []
 
   return (
     <main className="pb-24">
-      {/* Hero */}
       <section className="relative isolate overflow-hidden border-b">
         <div aria-hidden className="absolute inset-x-0 top-0 -z-10 h-40 bg-brand-gradient opacity-90 sm:h-48" />
         <Container className="pt-24 sm:pt-28">
           <div className="flex flex-col gap-6 pb-10 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
-              <Avatar name={name} src={creator.avatarUrl ?? creator.user.image} size={112} className="ring-4 ring-background" />
+              <Avatar name={creator.name} src={creator.avatarUrl} size={112} className="ring-4 ring-background" />
               <div className="min-w-0">
                 <h1 className="flex flex-wrap items-center gap-2 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-                  {name}
+                  {creator.name}
                   {creator.verified && <BadgeCheck className="size-7 text-primary" aria-label="Verified creator" />}
                 </h1>
                 <div className="mt-1 text-muted-foreground">@{creator.handle}</div>
@@ -103,7 +87,7 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
                   ) : (
                     <Pill>Not taking new deals</Pill>
                   )}
-                  {niches.slice(0, 4).map((n) => (
+                  {creator.niches.slice(0, 4).map((n) => (
                     <Pill key={n} tone="info">
                       {n}
                     </Pill>
@@ -113,17 +97,17 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
             </div>
             <Button asChild size="lg" className="h-12 rounded-full px-6">
               <Link href={ctaHref}>
-                Work with {name.split(" ")[0]} <ArrowRight />
+                Work with {firstName} <ArrowRight />
               </Link>
             </Button>
           </div>
 
           <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-t-2xl border-x border-t bg-border sm:grid-cols-4">
             {[
-              { k: "Total followers", v: compact(creator.followers) },
-              { k: "Avg. engagement", v: pct(creator.engagementRate) },
-              { k: "Completed deals", v: String(completed) },
-              { k: "Avg. rating", v: avgRating ? `${avgRating.toFixed(1)} ★` : "—" },
+              { k: "Total followers", v: creator.followersTotal ? compact(creator.followersTotal) : "—" },
+              { k: "Avg. engagement", v: creator.engagementRate !== null ? pct(creator.engagementRate) : "—" },
+              { k: "Completed deals", v: String(creator.completedDeals) },
+              { k: "Avg. rating", v: reviewStats.avgRating ? `${reviewStats.avgRating.toFixed(1)} ★` : "—" },
             ].map((s) => (
               <div key={s.k} className="bg-card px-5 py-4">
                 <dt className="text-xs text-muted-foreground">{s.k}</dt>
@@ -140,61 +124,60 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
             <section>
               <h2 className="font-display text-xl font-bold">About</h2>
               <p className="mt-3 whitespace-pre-line leading-relaxed text-muted-foreground">{creator.bio}</p>
-              {languages.length > 0 && <p className="mt-3 text-sm text-muted-foreground">Creates in {languages.join(", ")}</p>}
+              {creator.languages.length > 0 && <p className="mt-3 text-sm text-muted-foreground">Creates in {creator.languages.join(", ")}</p>}
             </section>
           )}
 
           <section>
             <h2 className="font-display text-xl font-bold">Platforms</h2>
-            {platforms.length === 0 ? (
+            {creator.socialAccounts.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No platforms connected yet.</p>
             ) : (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {platforms.map((p) => {
-                  const followers = p.followers ?? 0
-                  const er = p.engagementRate ?? 0
-                  const ratio = followers ? er / benchmarkER(followers) : 0
-                  return (
-                    <div key={`${p.platform}-${p.handle}`} className="rounded-2xl border bg-card p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-semibold capitalize">{p.platform.toLowerCase()}</div>
-                          {p.handle && <div className="text-xs text-muted-foreground">@{p.handle.replace(/^@/, "")}</div>}
-                        </div>
-                        {ratio > 0 && (
-                          <Pill tone={ratio >= 1 ? "success" : ratio >= 0.6 ? "info" : "warning"}>{ratio.toFixed(1)}× tier ER</Pill>
+                {creator.socialAccounts.map((a) => (
+                  <div key={`${a.platform}-${a.handle}`} className="rounded-2xl border bg-card p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-semibold capitalize">{a.platform.toLowerCase()}</div>
+                        {a.profileUrl ? (
+                          <a href={a.profileUrl} target="_blank" rel="noopener noreferrer nofollow" className="text-xs text-muted-foreground hover:underline">
+                            @{a.handle.replace(/^@/, "")}
+                          </a>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">@{a.handle.replace(/^@/, "")}</div>
                         )}
                       </div>
-                      <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                        <div>
-                          <dt className="text-[11px] text-muted-foreground">Followers</dt>
-                          <dd className="font-semibold tabular-nums">{compact(followers)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-[11px] text-muted-foreground">Engagement</dt>
-                          <dd className="font-semibold tabular-nums">{pct(er)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-[11px] text-muted-foreground">Avg. views</dt>
-                          <dd className="font-semibold tabular-nums">{p.avgViews ? compact(p.avgViews) : "—"}</dd>
-                        </div>
-                      </dl>
+                      {a.source === "SELF_REPORTED" ? <Pill tone="warning">Self-reported, unverified</Pill> : <Pill tone="success">Verified data</Pill>}
                     </div>
-                  )
-                })}
+                    <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <dt className="text-[11px] text-muted-foreground">Followers</dt>
+                        <dd className="font-semibold tabular-nums">{a.followers !== null ? compact(a.followers) : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] text-muted-foreground">Engagement</dt>
+                        <dd className="font-semibold tabular-nums">{a.engagementRate !== null ? pct(a.engagementRate) : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] text-muted-foreground">Avg. views</dt>
+                        <dd className="font-semibold tabular-nums">{a.avgViews ? compact(a.avgViews) : "—"}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
               </div>
             )}
           </section>
 
           <section>
             <h2 className="font-display text-xl font-bold">Portfolio</h2>
-            {portfolio.length === 0 ? (
+            {creator.portfolio.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No portfolio items yet.</p>
             ) : (
               <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-                {portfolio.map((item, i) => {
-                  const body = (
-                    <>
+                {creator.portfolio.map((item, i) => (
+                  <li key={`${item.title}-${i}`}>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer nofollow" className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition hover:border-primary/40">
                       <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
                         <Briefcase className="size-4" />
                       </span>
@@ -202,39 +185,44 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
                         <span className="block truncate font-medium">{item.title}</span>
                         {item.brand && <span className="block text-xs text-muted-foreground">for {item.brand}</span>}
                       </span>
-                      {item.url && <ExternalLink className="size-4 shrink-0 text-muted-foreground" />}
-                    </>
-                  )
-                  return (
-                    <li key={`${item.title}-${i}`}>
-                      {item.url ? (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer nofollow" className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition hover:border-primary/40">
-                          {body}
-                        </a>
-                      ) : (
-                        <div className="flex items-center gap-3 rounded-2xl border bg-card p-4">{body}</div>
-                      )}
-                    </li>
-                  )
-                })}
+                      <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+                    </a>
+                  </li>
+                ))}
               </ul>
             )}
           </section>
 
+          {creator.workedWith.length > 0 && (
+            <section>
+              <h2 className="font-display text-xl font-bold">Worked with</h2>
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {creator.workedWith.map((b) => (
+                  <li key={b.slug}>
+                    <Link href={`/brands/${b.slug}`} className="flex items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3 text-sm font-medium transition hover:border-primary/40">
+                      <Avatar name={b.companyName} src={b.logoUrl} size={24} />
+                      {b.companyName}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section>
             <div className="flex items-baseline justify-between">
               <h2 className="font-display text-xl font-bold">Reviews from brands</h2>
-              {reviews.length > 0 && (
+              {reviewStats.count > 0 && reviewStats.avgRating !== null && (
                 <span className="text-sm text-muted-foreground">
-                  {avgRating.toFixed(1)} average · {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                  {reviewStats.avgRating.toFixed(1)} average · {reviewStats.count} review{reviewStats.count === 1 ? "" : "s"}
                 </span>
               )}
             </div>
-            {reviews.length === 0 ? (
+            {creator.reviews.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No reviews yet.</p>
             ) : (
               <ul className="mt-4 space-y-3">
-                {reviews.map((r) => {
+                {creator.reviews.map((r) => {
                   const who = r.author.brand?.companyName ?? r.author.name
                   return (
                     <li key={r.id} className="rounded-2xl border bg-card p-5">
@@ -266,26 +254,27 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
         <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="text-sm font-semibold">hustl. scores</h2>
-            <div className="mt-4 grid grid-cols-4 gap-2">
-              {scores.map((s) => (
-                <ScoreRing key={s.label} score={s.score} size={52} label={s.label} />
-              ))}
-            </div>
-            <div className="mt-4 flex items-center gap-4 border-t pt-4 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <Clock className="size-3.5" /> Replies in ~{Math.round(creator.responseHours)}h
-              </span>
-              <span>{Math.round(creator.onTimeRate * 100)}% on time</span>
-            </div>
+            {scoreRings.length === 0 ? (
+              <p className="mt-3 text-sm text-muted-foreground">Scores appear once enough verified data is available.</p>
+            ) : (
+              <div className="mt-4 grid grid-cols-4 gap-2">
+                {scoreRings.map((s) => (
+                  <ScoreRing key={s.label} score={s.score} size={52} label={s.label} />
+                ))}
+              </div>
+            )}
+            {creator.onTimeRate !== null && (
+              <div className="mt-4 border-t pt-4 text-xs text-muted-foreground">{Math.round(creator.onTimeRate * 100)}% delivered on time</div>
+            )}
           </div>
 
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="text-sm font-semibold">Rate card</h2>
-            {rateCard.length === 0 ? (
+            {creator.rateCard.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">Rates shared on request.</p>
             ) : (
               <ul className="mt-3 divide-y">
-                {rateCard.map((r) => (
+                {creator.rateCard.map((r) => (
                   <li key={r.deliverable} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                     <span>{r.deliverable}</span>
                     <span className="font-semibold tabular-nums">{inr(r.price)}</span>
@@ -294,10 +283,11 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
               </ul>
             )}
             <Button asChild className="mt-4 h-11 w-full rounded-full">
-              <Link href={ctaHref}>Work with {name.split(" ")[0]}</Link>
+              <Link href={ctaHref}>Work with {firstName}</Link>
             </Button>
             <p className="mt-2 text-center text-[11px] text-muted-foreground">Paid through escrow · released on approval</p>
           </div>
+          <p className="text-center text-xs text-muted-foreground">On hustl. since {shortDate(creator.memberSince)}</p>
         </aside>
       </Container>
     </main>

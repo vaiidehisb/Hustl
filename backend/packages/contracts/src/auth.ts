@@ -3,25 +3,25 @@ import { z } from "zod"
 import { handle, password, type Role } from "./common"
 
 /** Emails are compared case-insensitively: always trimmed + lowercased. */
-export const email = z.string().trim().toLowerCase().email("Enter a valid email address").max(254)
+export const authEmail = z.string().trim().toLowerCase().email("Enter a valid email address").max(254)
 
 const personName = z.string().trim().min(1, "Name is required").max(100)
-export const companyName = z.string().trim().min(2, "Company name must be at least 2 characters").max(120)
+export const brandCompanyName = z.string().trim().min(2, "Company name must be at least 2 characters").max(120)
 
 const creatorSignup = z.object({ role: z.literal("CREATOR"), handle: handle.optional() })
-const brandSignup = z.object({ role: z.literal("BRAND"), companyName })
+const brandSignup = z.object({ role: z.literal("BRAND"), companyName: brandCompanyName })
 
 // ─── Requests ────────────────────────────────────────────────────────────────
 
 /** POST /auth/register. Creators may pick a handle (derived from the name when omitted); brands must give a company name. */
 export const registerRequest = z.discriminatedUnion("role", [
-  creatorSignup.extend({ email, password, name: personName }),
-  brandSignup.extend({ email, password, name: personName }),
+  creatorSignup.extend({ email: authEmail, password, name: personName }),
+  brandSignup.extend({ email: authEmail, password, name: personName }),
 ])
 export type RegisterRequest = z.infer<typeof registerRequest>
 
 /** POST /auth/login. The password isn't re-validated against the policy so legacy passwords still work. */
-export const loginRequest = z.object({ email, password: z.string().min(1, "Password is required").max(128) })
+export const loginRequest = z.object({ email: authEmail, password: z.string().min(1, "Password is required").max(128) })
 export type LoginRequest = z.infer<typeof loginRequest>
 
 /** POST /auth/refresh */

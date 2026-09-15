@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
-    "build": "tsup src/index.ts --format cjs --target node20 --out-dir dist --clean --no-splitting --noExternal @hustl/common --noExternal @hustl/contracts --noExternal @hustl/db --external @prisma/client",
+    "build": "tsup",
     "start": "node dist/index.js",
     "test": "vitest run"
   },
@@ -18,5 +18,7 @@
     "fastify": "^5.2.0",
     "pdfkit": "^0.15.2"
   },
-  "devDependencies": { "@types/pdfkit": "^0.13.8" }
+  "devDependencies": {
+    "@types/pdfkit": "^0.13.8"
+  }
 }

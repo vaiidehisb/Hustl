@@ -3,20 +3,15 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { signIn } from "next-auth/react"
-import { Building2, Eye, EyeOff, Loader2, Shield, UserRound } from "lucide-react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { getSession, signIn } from "next-auth/react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { GoogleButton, OrDivider } from "@/components/marketing/auth/google-button"
+import { FormAlert, PasswordField, TextField } from "@/components/marketing/auth/field"
 import { portalPath } from "@/components/marketing/portal"
-
-const DEMO_PASSWORD = "hustl1234"
-const DEMOS = [
-  { email: "brand@hustl.demo", label: "Brand", icon: Building2 },
-  { email: "creator@hustl.demo", label: "Creator", icon: UserRound },
-  { email: "admin@hustl.demo", label: "Admin", icon: Shield },
-]
+import { signInErrorMessage, signInSchema, type SignInValues } from "@/lib/validation/auth"
 
 /** Only follow same-origin callback URLs (middleware passes absolute ones). */
 function safeCallback(cb: string | undefined) {
@@ -31,34 +26,40 @@ function safeCallback(cb: string | undefined) {
   }
 }
 
-export function SignInForm({ googleEnabled, callbackUrl, initialError }: { googleEnabled: boolean; callbackUrl?: string; initialError?: string }) {
+export function SignInForm({
+  googleEnabled,
+  callbackUrl,
+  initialError,
+  expired,
+}: {
+  googleEnabled: boolean
+  callbackUrl?: string
+  initialError?: string
+  expired?: boolean
+}) {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [show, setShow] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(initialError ? "Sign-in failed. Please try again." : "")
+  const [formError, setFormError] = useState(initialError ? signInErrorMessage(initialError) : "")
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignInValues>({ resolver: zodResolver(signInSchema), defaultValues: { email: "", password: "" } })
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError("")
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError("")
     try {
-      const res = await signIn("credentials", { email, password, redirect: false })
-      if (!res || res.error) {
-        setError("Incorrect email or password.")
-        setLoading(false)
+      const res = await signIn("credentials", { email: values.email, password: values.password, redirect: false })
+      if (!res?.ok || res.error) {
+        setFormError(signInErrorMessage(res?.error))
         return
       }
-      const session = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json())
-      const role: string | null = session?.user?.role ?? null
-      router.push(safeCallback(callbackUrl) ?? portalPath(role))
+      const session = await getSession()
+      router.replace(safeCallback(callbackUrl) ?? portalPath(session?.user?.role))
       router.refresh()
     } catch {
-      setError("Something went wrong. Please try again.")
-      setLoading(false)
+      setFormError(signInErrorMessage("SERVICE_UNAVAILABLE"))
     }
-  }
+  })
 
   return (
     <div>
@@ -70,6 +71,12 @@ export function SignInForm({ googleEnabled, callbackUrl, initialError }: { googl
         </Link>
       </p>
 
+      {expired && !formError && (
+        <p role="status" className="mt-6 rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground">
+          Your session expired. Please log in again.
+        </p>
+      )}
+
       <div className="mt-8">
         {googleEnabled && (
           <>
@@ -78,76 +85,27 @@ export function SignInForm({ googleEnabled, callbackUrl, initialError }: { googl
           </>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-4" noValidate={false}>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="h-11" placeholder="you@company.com" />
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <TextField label="Email" type="email" autoComplete="email" placeholder="you@company.com" error={errors.email?.message} {...register("email")} />
+          <PasswordField
+            label="Password"
+            autoComplete="current-password"
+            error={errors.password?.message}
+            labelAside={
               <Link href="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-foreground">
                 Forgot password?
               </Link>
-            </div>
-            <div className="relative">
-              <Input
-                id="password"
-                type={show ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-11 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                className="absolute inset-y-0 right-0 grid w-10 place-items-center text-muted-foreground hover:text-foreground"
-                aria-label={show ? "Hide password" : "Show password"}
-              >
-                {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-          </div>
+            }
+            {...register("password")}
+          />
 
-          {error && (
-            <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          <FormAlert message={formError} />
 
-          <Button type="submit" className="h-11 w-full" disabled={loading}>
-            {loading && <Loader2 className="animate-spin" />}
-            {loading ? "Signing in…" : "Log in"}
+          <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="animate-spin" />}
+            {isSubmitting ? "Signing in…" : "Log in"}
           </Button>
         </form>
-
-        <div className="mt-8 rounded-xl border border-dashed bg-muted/40 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">Try a demo account</span>
-            <span className="font-mono text-xs text-muted-foreground">pw: {DEMO_PASSWORD}</span>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {DEMOS.map((d) => (
-              <button
-                key={d.email}
-                type="button"
-                onClick={() => {
-                  setEmail(d.email)
-                  setPassword(DEMO_PASSWORD)
-                  setError("")
-                }}
-                className="flex flex-col items-center gap-1 rounded-lg border bg-card px-2 py-2.5 text-xs font-medium transition hover:border-primary/40 hover:bg-accent"
-                title={d.email}
-              >
-                <d.icon className="size-4 text-primary" />
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">Click to fill, then Log in. Available when the database is seeded.</p>
-        </div>
       </div>
     </div>
   )

@@ -22,7 +22,7 @@ const MODES = [
   {
     icon: Layers,
     name: "Custom milestones",
-    tag: "Most popular",
+    tag: "Most flexible",
     body: "Split the deal — e.g. 30% on script approval, 70% when content goes live. Each part releases on approval.",
     bars: [30, 70],
     featured: true,

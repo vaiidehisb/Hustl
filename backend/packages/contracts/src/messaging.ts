@@ -17,6 +17,8 @@ export type SendMessageRequest = z.infer<typeof sendMessageRequest>
 export const listConversationsQuery = z.object({
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  /** Return only the thread attached to this deal (used to deep-link from the deal room). */
+  dealId: z.string().uuid().optional(),
 })
 export type ListConversationsQuery = z.infer<typeof listConversationsQuery>
 

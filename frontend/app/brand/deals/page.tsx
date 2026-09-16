@@ -1,40 +1,46 @@
 import Link from "next/link"
 import { ArrowRight, Handshake, Sparkles } from "lucide-react"
+import type { DealStatus, DealSummary } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
-import { Avatar, EmptyState, PageHeader, StatusBadge } from "@/components/app/ui"
+import { Avatar, EmptyState, PageHeader } from "@/components/app/ui"
 import { LinkTabs } from "@/components/brand/link-tabs"
-import { creatorInclude } from "@/components/brand/data"
+import { BrandStatusBadge } from "@/components/brand/status"
+import { ErrorPanel } from "@/components/brand/error-panel"
+import { loadDeals } from "@/components/brand/data"
 import { nextStep, PAYMENT_MODE_LABEL } from "@/components/brand/helpers"
-import { db } from "@/lib/db"
 import { inr, timeAgo } from "@/lib/format"
-import { requireBrand } from "@/lib/session"
 import { cn } from "@/lib/utils"
 
 export const metadata = { title: "Deals · hustl." }
 
-const TABS: { value: string; label: string; statuses?: string[] }[] = [
+const TABS: { value: string; label: string; statuses?: DealStatus[] }[] = [
   { value: "all", label: "All" },
-  { value: "negotiating", label: "Negotiating", statuses: ["OFFER_SENT", "CONTRACT_PENDING", "CONTRACT_SIGNED"] },
+  { value: "negotiating", label: "Negotiating", statuses: ["OFFER_SENT", "NEGOTIATING", "AGREED", "CONTRACT_SIGNED"] },
   { value: "active", label: "Active", statuses: ["FUNDED", "IN_PROGRESS"] },
   { value: "completed", label: "Completed", statuses: ["COMPLETED"] },
   { value: "closed", label: "Disputed & cancelled", statuses: ["DISPUTED", "CANCELLED"] },
 ]
 
 export default async function BrandDealsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { brand } = await requireBrand()
   const { tab: rawTab } = await searchParams
   const tab = TABS.find((t) => t.value === rawTab) ?? TABS[0]
+  const res = await loadDeals({ pageSize: 100 })
 
-  const deals = await db.deal.findMany({
-    where: { brandId: brand.id },
-    include: { creator: { include: creatorInclude }, milestones: { select: { status: true } } },
-    orderBy: { updatedAt: "desc" },
-  })
+  if (!res.ok) {
+    return (
+      <div>
+        <PageHeader title="Deals" description="Every collaboration from offer to payout." />
+        <ErrorPanel error={res.error} title="Couldn't load your deals" />
+      </div>
+    )
+  }
+
+  const deals = res.data
   const inTab = (t: (typeof TABS)[number]) => (t.statuses ? deals.filter((d) => t.statuses!.includes(d.status)) : deals)
   const rows = inTab(tab)
-    .map((d) => ({ ...d, step: nextStep(d) }))
+    .map((d) => ({ deal: d, step: nextStep(d) }))
     // brand's move first, then most recently updated
-    .sort((a, b) => Number(b.step.yourMove) - Number(a.step.yourMove) || b.updatedAt.getTime() - a.updatedAt.getTime())
+    .sort((a, b) => Number(b.step.yourMove) - Number(a.step.yourMove) || Date.parse(b.deal.updatedAt) - Date.parse(a.deal.updatedAt))
 
   return (
     <div>
@@ -88,15 +94,15 @@ export default async function BrandDealsPage({ searchParams }: { searchParams: P
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rows.map((d) => (
+              {rows.map(({ deal: d, step }) => (
                 <tr key={d.id} className="group relative transition-colors hover:bg-muted/40">
                   <td className="px-5 py-3">
                     <Link href={`/brand/deals/${d.id}`} className="flex items-center gap-3 after:absolute after:inset-0">
-                      <Avatar name={d.creator.user.name} src={d.creator.avatarUrl ?? d.creator.user.image} size={34} />
+                      <Avatar name={d.creator.name} src={d.creator.avatarUrl} size={34} />
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{d.title}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {d.creator.user.name} · @{d.creator.handle}
+                          {d.creator.name} · @{d.creator.handle}
                         </span>
                       </span>
                     </Link>
@@ -104,10 +110,10 @@ export default async function BrandDealsPage({ searchParams }: { searchParams: P
                   <td className="px-3 py-3 text-right font-medium tabular-nums">{inr(d.amount)}</td>
                   <td className="px-3 py-3 text-muted-foreground">{PAYMENT_MODE_LABEL[d.paymentMode] ?? d.paymentMode}</td>
                   <td className="px-3 py-3">
-                    <StatusBadge status={d.status} />
+                    <BrandStatusBadge status={d.status} />
                   </td>
                   <td className="px-3 py-3">
-                    <StepText step={d.step} />
+                    <StepText step={step} />
                   </td>
                   <td className="px-5 py-3 text-right text-xs whitespace-nowrap text-muted-foreground">{timeAgo(d.updatedAt)}</td>
                 </tr>
@@ -117,21 +123,21 @@ export default async function BrandDealsPage({ searchParams }: { searchParams: P
 
           {/* Mobile list */}
           <ul className="divide-y md:hidden">
-            {rows.map((d) => (
+            {rows.map(({ deal: d, step }: { deal: DealSummary; step: ReturnType<typeof nextStep> }) => (
               <li key={d.id}>
                 <Link href={`/brand/deals/${d.id}`} className="flex gap-3 px-4 py-3.5 active:bg-muted/50">
-                  <Avatar name={d.creator.user.name} src={d.creator.avatarUrl ?? d.creator.user.image} size={36} />
+                  <Avatar name={d.creator.name} src={d.creator.avatarUrl} size={36} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <p className="truncate text-sm font-medium">{d.title}</p>
                       <span className="shrink-0 text-sm font-semibold tabular-nums">{inr(d.amount)}</span>
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {d.creator.user.name} · {PAYMENT_MODE_LABEL[d.paymentMode] ?? d.paymentMode} · {timeAgo(d.updatedAt)}
+                      {d.creator.name} · {PAYMENT_MODE_LABEL[d.paymentMode] ?? d.paymentMode} · {timeAgo(d.updatedAt)}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <StatusBadge status={d.status} />
-                      <StepText step={d.step} />
+                      <BrandStatusBadge status={d.status} />
+                      <StepText step={step} />
                     </div>
                   </div>
                 </Link>

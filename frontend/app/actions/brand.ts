@@ -1,208 +1,167 @@
 "use server"
 
+// Brand portal mutations. Every action calls the API gateway through
+// `@/lib/api` and returns a serialisable result:
+//   { ok: true, data } | { ok: false, error: { code, message, fieldErrors? } }
+
 import { revalidatePath } from "next/cache"
-import { db } from "@/lib/db"
-import { requireBrand } from "@/lib/session"
-import { parseBrief, type ParsedBrief } from "@/lib/ai/brief-parser"
-import { refreshBriefEmbedding } from "@/lib/ai/refresh"
-import { slugify } from "@/lib/format"
-import { run, ValidationError } from "./result"
+import type { ZodSchema } from "zod"
+import {
+  createBriefRequest,
+  createOfferRequest,
+  createVerificationRequest,
+  updateBrandProfileRequest,
+  updateBriefRequest,
+  type ApplicationDTO,
+  type BriefDTO,
+  type CreateBriefRequest,
+  type CreateOfferRequest,
+  type DealDetail,
+  type OwnBrandProfile,
+  type SavedCreatorState,
+  type UpdateBrandProfileRequest,
+  type UpdateBriefRequest,
+  type VerificationRequestDto,
+} from "@hustl/contracts"
+import { apiFetch } from "@/lib/api"
+import { toFormError, zodFieldErrors } from "@/lib/api/form-errors"
+import type { ParsedBriefResult } from "@/components/brand/helpers"
+
+export type ActionError = { code: string; message: string; fieldErrors?: Record<string, string> }
+export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: ActionError }
+
+const fail = (code: string, message: string, fieldErrors?: Record<string, string>): ActionResult<never> => ({ ok: false, error: { code, message, fieldErrors } })
+
+async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
+  try {
+    return { ok: true, data: await fn() }
+  } catch (err) {
+    if (err instanceof Error && /NEXT_REDIRECT|NEXT_NOT_FOUND/.test(err.message)) throw err
+    const e = toFormError(err)
+    return { ok: false, error: { code: e.code, message: e.error, fieldErrors: e.fieldErrors } }
+  }
+}
+
+/** Validates with the contract schema first so obvious mistakes never leave the server. */
+function check<T>(schema: ZodSchema<T>, input: unknown): { ok: true; value: T } | { ok: false; result: ActionResult<never> } {
+  const parsed = schema.safeParse(input)
+  if (parsed.success) return { ok: true, value: parsed.data }
+  return { ok: false, result: fail("VALIDATION_ERROR", "Please fix the highlighted fields.", zodFieldErrors(parsed.error)) }
+}
 
 const refreshBrand = () => revalidatePath("/brand", "layout")
 
 // ─── Briefs ──────────────────────────────────────────────────────────────────
 
-export type BriefInput = {
-  title: string
-  description: string
-  niche: string
-  platforms: string[]
-  deliverables: { type: string; quantity: number }[]
-  minFollowers: number
-  /** fraction, e.g. 0.03 */
-  minEngagement: number
-  budgetPerCreator: number
-  creatorsNeeded: number
-  location: string
-  timeline: string
-  audience: string
-  deadline?: string | null
-  parsed?: ParsedBrief | null
+export async function parseBriefAction(text: string): Promise<ActionResult<ParsedBriefResult>> {
+  if (text.trim().length < 20) return fail("VALIDATION_ERROR", "Describe the campaign in a sentence or two first.", { text: "Add at least 20 characters." })
+  return run(() => apiFetch<ParsedBriefResult>("/briefs/parse", { method: "POST", body: { text: text.trim().slice(0, 20_000) }, timeoutMs: 40_000 }))
 }
 
-function cleanBrief(input: BriefInput) {
-  const title = input.title.trim()
-  const description = input.description.trim()
-  if (title.length < 4) throw new ValidationError("Give the brief a title (at least 4 characters).")
-  if (description.length < 20) throw new ValidationError("Add a description of at least 20 characters so creators know what you need.")
-  const int = (n: number, min = 0) => Math.max(min, Math.round(Number.isFinite(n) ? n : 0))
-  const deadline = input.deadline ? new Date(input.deadline) : null
-  if (deadline && Number.isNaN(deadline.getTime())) throw new ValidationError("That deadline isn't a valid date.")
-  return {
-    title,
-    description,
-    niche: input.niche.trim().toLowerCase(),
-    platforms: input.platforms.map((p) => p.toLowerCase()),
-    deliverables: input.deliverables.filter((d) => d.type.trim()).map((d) => ({ type: d.type.trim(), quantity: int(d.quantity, 1) })),
-    minFollowers: int(input.minFollowers),
-    minEngagement: Math.max(0, Math.min(1, Number(input.minEngagement) || 0)),
-    budgetPerCreator: int(input.budgetPerCreator),
-    creatorsNeeded: int(input.creatorsNeeded, 1),
-    location: input.location.trim(),
-    timeline: input.timeline.trim(),
-    audience: input.audience.trim(),
-    deadline,
-  }
-}
-
-export async function parseBriefAction(text: string) {
+export async function createBriefAction(input: CreateBriefRequest, publish = false): Promise<ActionResult<{ id: string; status: string }>> {
+  const v = check(createBriefRequest, input)
+  if (!v.ok) return v.result
   return run(async () => {
-    await requireBrand()
-    if (text.trim().length < 20) throw new ValidationError("Describe the campaign in a sentence or two first.")
-    return parseBrief(text.slice(0, 4000))
+    const brief = await apiFetch<BriefDTO>("/briefs", { method: "POST", body: v.value })
+    const final = publish ? await apiFetch<BriefDTO>(`/briefs/${brief.id}/publish`, { method: "POST", timeoutMs: 30_000 }) : brief
+    refreshBrand()
+    return { id: final.id, status: final.status }
   })
 }
 
-export async function createBriefAction(input: BriefInput, publish: boolean) {
+export async function updateBriefAction(briefId: string, input: UpdateBriefRequest, publish = false): Promise<ActionResult<{ id: string; status: string }>> {
+  const v = check(updateBriefRequest, input)
+  if (!v.ok) return v.result
   return run(async () => {
-    const { brand } = await requireBrand()
-    const data = cleanBrief(input)
-    if (publish && data.budgetPerCreator <= 0) throw new ValidationError("Set a budget per creator before publishing.")
-    const brief = await db.brief.create({
-      data: { ...data, brandId: brand.id, status: publish ? "PUBLISHED" : "DRAFT", parsed: input.parsed ?? undefined },
-    })
-    await refreshBriefEmbedding(brief.id)
+    const brief = await apiFetch<BriefDTO>(`/briefs/${briefId}`, { method: "PATCH", body: v.value })
+    const final = publish ? await apiFetch<BriefDTO>(`/briefs/${briefId}/publish`, { method: "POST", timeoutMs: 30_000 }) : brief
     refreshBrand()
-    return { id: brief.id }
+    revalidatePath(`/brand/briefs/${briefId}`)
+    return { id: final.id, status: final.status }
   })
 }
 
-export async function updateBriefAction(briefId: string, input: BriefInput, publish?: boolean) {
+export async function publishBriefAction(briefId: string): Promise<ActionResult<{ id: string; status: string }>> {
   return run(async () => {
-    const { brand } = await requireBrand()
-    const brief = await db.brief.findUnique({ where: { id: briefId } })
-    if (!brief || brief.brandId !== brand.id) throw new ValidationError("Brief not found.")
-    const data = cleanBrief(input)
-    await db.brief.update({ where: { id: briefId }, data: { ...data, ...(publish ? { status: "PUBLISHED" } : {}) } })
-    await refreshBriefEmbedding(briefId)
+    const brief = await apiFetch<BriefDTO>(`/briefs/${briefId}/publish`, { method: "POST", timeoutMs: 30_000 })
     refreshBrand()
-    return { id: briefId }
+    revalidatePath(`/brand/briefs/${briefId}`)
+    return { id: brief.id, status: brief.status }
   })
 }
 
-export async function setBriefStatusAction(briefId: string, status: "DRAFT" | "PUBLISHED" | "CLOSED") {
+export async function closeBriefAction(briefId: string): Promise<ActionResult<{ id: string; status: string }>> {
   return run(async () => {
-    const { brand } = await requireBrand()
-    const brief = await db.brief.findUnique({ where: { id: briefId } })
-    if (!brief || brief.brandId !== brand.id) throw new ValidationError("Brief not found.")
-    if (status === "PUBLISHED" && brief.budgetPerCreator <= 0) throw new ValidationError("Set a budget per creator before publishing.")
-    await db.brief.update({ where: { id: briefId }, data: { status } })
-    if (status === "PUBLISHED") await refreshBriefEmbedding(briefId)
+    const brief = await apiFetch<BriefDTO>(`/briefs/${briefId}/close`, { method: "POST" })
     refreshBrand()
+    revalidatePath(`/brand/briefs/${briefId}`)
+    return { id: brief.id, status: brief.status }
+  })
+}
+
+export async function deleteBriefAction(briefId: string): Promise<ActionResult<{ deleted: true }>> {
+  return run(async () => {
+    const res = await apiFetch<{ deleted: true }>(`/briefs/${briefId}`, { method: "DELETE" })
+    refreshBrand()
+    return res
   })
 }
 
 // ─── Applications ────────────────────────────────────────────────────────────
 
-export async function setApplicationStatusAction(applicationId: string, status: "APPLIED" | "SHORTLISTED" | "REJECTED") {
+export async function setApplicationStatusAction(applicationId: string, status: "SHORTLISTED" | "REJECTED"): Promise<ActionResult<ApplicationDTO>> {
   return run(async () => {
-    const { brand } = await requireBrand()
-    const app = await db.application.findUnique({ where: { id: applicationId }, include: { brief: true, creator: true } })
-    if (!app || app.brief.brandId !== brand.id) throw new ValidationError("Application not found.")
-    if (app.status === "OFFERED" || app.status === "WITHDRAWN") throw new ValidationError("This application can no longer be changed.")
-    await db.application.update({ where: { id: applicationId }, data: { status } })
-    if (status !== "APPLIED") {
-      await db.notification.create({
-        data: {
-          userId: app.creator.userId,
-          title: status === "SHORTLISTED" ? `${brand.companyName} shortlisted you` : `Update on "${app.brief.title}"`,
-          body:
-            status === "SHORTLISTED"
-              ? `You're on the shortlist for "${app.brief.title}". An offer may follow soon.`
-              : `${brand.companyName} went with other creators this time. Keep applying!`,
-          href: "/creator/applications",
-        },
-      })
-    }
+    const app = await apiFetch<ApplicationDTO>(`/applications/${applicationId}/status`, { method: "PATCH", body: { status } })
     refreshBrand()
+    revalidatePath(`/brand/briefs/${app.briefId}`)
+    return app
   })
 }
 
 // ─── Creators ────────────────────────────────────────────────────────────────
 
-export async function toggleSaveCreatorAction(creatorId: string) {
+export async function toggleSaveCreatorAction(creatorId: string, saved: boolean): Promise<ActionResult<SavedCreatorState>> {
   return run(async () => {
-    const { brand } = await requireBrand()
-    const key = { brandId_creatorId: { brandId: brand.id, creatorId } }
-    const existing = await db.savedCreator.findUnique({ where: key })
-    if (existing) await db.savedCreator.delete({ where: key })
-    else await db.savedCreator.create({ data: { brandId: brand.id, creatorId } })
+    const res = await apiFetch<SavedCreatorState>(`/brands/me/saved-creators/${creatorId}`, { method: saved ? "PUT" : "DELETE" })
     revalidatePath("/brand/discover")
-    return { saved: !existing }
+    return res
+  })
+}
+
+// ─── Offers ──────────────────────────────────────────────────────────────────
+
+export async function sendOfferAction(input: CreateOfferRequest): Promise<ActionResult<{ id: string }>> {
+  const v = check(createOfferRequest, input)
+  if (!v.ok) return v.result
+  return run(async () => {
+    const deal = await apiFetch<DealDetail>("/deals", { method: "POST", body: v.value })
+    refreshBrand()
+    return { id: deal.id }
   })
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-export type BrandProfileInput = {
-  companyName: string
-  website: string
-  industry: string
-  description: string
-  location: string
-  size: string
-  logoUrl: string
-}
-
-export async function updateBrandProfileAction(input: BrandProfileInput) {
+export async function updateBrandProfileAction(input: UpdateBrandProfileRequest): Promise<ActionResult<OwnBrandProfile>> {
+  const v = check(updateBrandProfileRequest, input)
+  if (!v.ok) return v.result
   return run(async () => {
-    const { brand } = await requireBrand()
-    const companyName = input.companyName.trim()
-    if (companyName.length < 2) throw new ValidationError("Company name is required.")
-    const website = input.website.trim()
-    if (website && !/^https?:\/\/\S+\.\S+/.test(website)) throw new ValidationError("Website must start with http:// or https://")
-    const logoUrl = input.logoUrl.trim()
-    if (logoUrl && !/^https?:\/\/\S+/.test(logoUrl)) throw new ValidationError("Logo URL must be a full http(s) link.")
-
-    let slug = brand.slug
-    if (companyName !== brand.companyName) {
-      const base = slugify(companyName) || "brand"
-      const taken = await db.brandProfile.findFirst({ where: { slug: base, NOT: { id: brand.id } } })
-      slug = taken ? `${base}-${brand.id.slice(-4)}` : base
-    }
-    await db.brandProfile.update({
-      where: { id: brand.id },
-      data: {
-        companyName,
-        slug,
-        website,
-        industry: input.industry.trim(),
-        description: input.description.trim().slice(0, 1000),
-        location: input.location.trim(),
-        size: input.size.trim(),
-        logoUrl: logoUrl || null,
-      },
-    })
+    const profile = await apiFetch<OwnBrandProfile>("/brands/me", { method: "PUT", body: v.value })
     refreshBrand()
-    return { slug }
+    return profile
   })
 }
 
-export async function setPlanAction(plan: "STARTER" | "GROWTH") {
+/** Files a real verification request — an admin reviews it, nothing is verified here. */
+export async function requestVerificationAction(details: Record<string, string>): Promise<ActionResult<VerificationRequestDto>> {
+  const cleaned = Object.fromEntries(Object.entries(details).filter(([, v]) => v?.trim()).map(([k, v]) => [k, v.trim()]))
+  if (!cleaned.legalName) return fail("VALIDATION_ERROR", "Please fix the highlighted fields.", { legalName: "Enter the registered legal name." })
+  const v = check(createVerificationRequest, { type: "BRAND_BUSINESS", details: cleaned, documentIds: [] })
+  if (!v.ok) return v.result
   return run(async () => {
-    const { brand } = await requireBrand()
-    await db.brandProfile.update({ where: { id: brand.id }, data: { plan } })
+    const request = await apiFetch<VerificationRequestDto>("/verifications", { method: "POST", body: v.value })
     refreshBrand()
-  })
-}
-
-export async function verifyKycAction() {
-  return run(async () => {
-    const { user, brand } = await requireBrand()
-    await db.$transaction([
-      db.user.update({ where: { id: user.id }, data: { kycVerified: true } }),
-      db.brandProfile.update({ where: { id: brand.id }, data: { verified: true } }),
-    ])
-    refreshBrand()
+    revalidatePath("/brand/settings")
+    return request
   })
 }

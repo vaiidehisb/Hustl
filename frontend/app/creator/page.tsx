@@ -1,118 +1,135 @@
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import { ArrowRight, BadgeCheck, CheckCircle2, Circle, FileSignature, Handshake, Lock, PartyPopper, RotateCcw, Send, Sparkles, Star, Wallet } from "lucide-react"
+import type { BriefDTO, DealDetail, DealSummary } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Avatar, PageHeader, Panel, Pill, ScoreRing, StatCard, TextLink } from "@/components/app/ui"
 import { EarningsChart } from "@/components/creator/charts"
-import { dueLabel, lastMonths, monthKey, profileChecklist } from "@/components/creator/lib"
-import { applicationScore } from "@/lib/ai/match"
+import { ErrorState } from "@/components/creator/states"
+import { completionChecklist, dueLabel, monthLabel } from "@/components/creator/lib"
 import type { Tone } from "@/lib/deals/machine"
-import { db } from "@/lib/db"
 import { inr, timeAgo } from "@/lib/format"
-import { requireCreator } from "@/lib/session"
+import { getBriefFit, getCreatorOverview, getDealDetails, getMe, getMyDeals, getOpenBriefs, load, soft, type BriefFit } from "./data"
 
 export const metadata = { title: "Dashboard · hustl." }
 
 type Move = { id: string; href: string; icon: LucideIcon; tag: string; tone: Tone; title: string; detail: string; priority: number; due: number }
 
-const SETTLED = ["APPROVED", "RELEASED", "REFUNDED"]
+const ACTIONABLE = ["OFFER_SENT", "NEGOTIATING", "AGREED", "FUNDED", "IN_PROGRESS", "DISPUTED", "COMPLETED"]
 
 function greeting() {
   const hour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hourCycle: "h23", timeZone: "Asia/Kolkata" }).format(new Date()))
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
 }
 
-export default async function CreatorDashboard() {
-  const { user, creator } = await requireCreator()
-  const now = new Date()
+/** Everything the creator can act on right now, straight from the server's `allowedActions`. */
+function movesFor(summary: DealSummary, deal: DealDetail): Move[] {
+  const moves: Move[] = []
+  const updated = new Date(deal.updatedAt).getTime()
+  const brand = deal.brand.companyName
 
-  const [releases, offers, contracts, activeDeals, shortlisted, liveBriefs, myApps] = await Promise.all([
-    db.transaction.findMany({ where: { type: "RELEASE", deal: { creatorId: creator.id } }, select: { amount: true, createdAt: true } }),
-    db.deal.findMany({
-      where: { creatorId: creator.id, status: "OFFER_SENT", awaitingParty: "CREATOR" },
-      include: { brand: { select: { companyName: true } } },
-      orderBy: { updatedAt: "desc" },
-    }),
-    db.deal.findMany({ where: { creatorId: creator.id, status: "CONTRACT_PENDING", creatorSignedAt: null }, include: { brand: { select: { companyName: true } } } }),
-    db.deal.findMany({
-      where: { creatorId: creator.id, status: { in: ["FUNDED", "IN_PROGRESS"] } },
-      include: { brand: { select: { companyName: true } }, milestones: { orderBy: { order: "asc" } } },
-    }),
-    db.application.count({ where: { creatorId: creator.id, status: "SHORTLISTED" } }),
-    db.brief.findMany({
-      where: { status: "PUBLISHED", OR: [{ deadline: null }, { deadline: { gte: now } }] },
-      include: { brand: { select: { companyName: true, verified: true, logoUrl: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-    db.application.findMany({ where: { creatorId: creator.id }, select: { briefId: true } }),
-  ])
-
-  // KPIs
-  const lifetime = releases.reduce((s, t) => s + t.amount, 0)
-  const thisMonth = releases.filter((t) => monthKey(t.createdAt) === monthKey(now)).reduce((s, t) => s + t.amount, 0)
-  const escrowMilestones = activeDeals.flatMap((d) => d.milestones).filter((m) => m.status !== "RELEASED" && m.status !== "REFUNDED")
-  const inEscrow = escrowMilestones.reduce((s, m) => s + m.amount, 0)
-  const chart = lastMonths(6, now).map((m) => ({
-    label: m.label,
-    net: releases.filter((t) => monthKey(t.createdAt) === m.key).reduce((s, t) => s + t.amount, 0),
-  }))
-
-  // Next moves
-  const moves: Move[] = [
-    ...offers.map((d) => ({
-      id: `o-${d.id}`,
-      href: `/creator/deals/${d.id}`,
+  if (deal.allowedActions.includes("ACCEPT"))
+    moves.push({
+      id: `offer-${deal.id}`,
+      href: `/creator/deals/${deal.id}`,
       icon: Handshake,
-      tag: d.negotiationRound ? "Counter-offer" : "New offer",
-      tone: "brand" as Tone,
-      title: `${d.brand.companyName} offered ${inr(d.amount)}`,
-      detail: `${d.title} · accept, counter or decline`,
+      tag: deal.negotiationRounds ? `Counter · round ${deal.negotiationRounds}` : "New offer",
+      tone: "brand",
+      title: `${brand} offered ${inr(deal.amount)}`,
+      detail: `${deal.title} · ${deal.allowedActions.includes("COUNTER") ? "accept, counter or decline" : "accept or decline"}`,
       priority: 0,
-      due: d.updatedAt.getTime(),
-    })),
-    ...contracts.map((d) => ({
-      id: `c-${d.id}`,
-      href: `/creator/deals/${d.id}`,
+      due: updated,
+    })
+
+  if (deal.allowedActions.includes("SIGN"))
+    moves.push({
+      id: `sign-${deal.id}`,
+      href: `/creator/deals/${deal.id}`,
       icon: FileSignature,
       tag: "Sign contract",
-      tone: "warning" as Tone,
-      title: `Sign your contract with ${d.brand.companyName}`,
-      detail: `${d.title} · ${inr(d.amount)} — escrow is funded after both sign`,
+      tone: "warning",
+      title: `Sign your contract with ${brand}`,
+      detail: `${deal.title} · ${inr(deal.amount)} — escrow is funded after both parties sign`,
       priority: 1,
-      due: d.updatedAt.getTime(),
-    })),
-  ]
-  for (const d of activeDeals) {
-    const next = d.milestones.find((m) => !SETTLED.includes(m.status))
-    if (!next || !["PENDING", "REVISION_REQUESTED"].includes(next.status)) continue
-    const revision = next.status === "REVISION_REQUESTED"
-    const due = dueLabel(next.dueDate)
+      due: updated,
+    })
+
+  for (const m of deal.milestones) {
+    if (!m.allowedActions.includes("SUBMIT")) continue
+    const revision = m.status === "REVISION_REQUESTED"
+    const due = dueLabel(m.dueDate)
     moves.push({
-      id: `m-${next.id}`,
-      href: `/creator/deals/${d.id}`,
+      id: `ms-${m.id}`,
+      href: `/creator/deals/${deal.id}`,
       icon: revision ? RotateCcw : Send,
       tag: revision ? "Revision requested" : (due?.text ?? "Deliver next"),
       tone: revision ? "danger" : (due?.tone ?? "neutral"),
-      title: revision ? `Revise “${next.title}”` : `Deliver “${next.title}”`,
-      detail: `${d.title} · ${d.brand.companyName} · ${inr(next.amount)} released on approval`,
+      title: revision ? `Revise “${m.title}”` : `Deliver “${m.title}”`,
+      detail: `${deal.title} · ${brand} · ${inr(m.amount)} released on approval`,
       priority: revision || due?.tone === "danger" ? 2 : 3,
-      due: next.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
+      due: m.dueDate ? new Date(m.dueDate).getTime() : Number.MAX_SAFE_INTEGER,
     })
   }
-  moves.sort((a, b) => a.priority - b.priority || a.due - b.due)
 
-  // Recommendations
-  const applied = new Set(myApps.map((a) => a.briefId))
-  const recommended = liveBriefs
-    .filter((b) => !applied.has(b.id))
-    .map((b) => ({ brief: b, match: applicationScore(creator, b) }))
-    .sort((a, b) => b.match.score - a.match.score)
-    .slice(0, 3)
+  if (deal.allowedActions.includes("REVIEW"))
+    moves.push({
+      id: `review-${deal.id}`,
+      href: `/creator/deals/${deal.id}`,
+      icon: Star,
+      tag: "Leave a review",
+      tone: "info",
+      title: `Review your deal with ${brand}`,
+      detail: `${summary.title} · completed ${timeAgo(deal.completedAt ?? deal.updatedAt)}`,
+      priority: 4,
+      due: updated,
+    })
 
-  const checklist = profileChecklist(creator, user.kycVerified)
+  return moves
+}
+
+export default async function CreatorDashboard() {
+  const [meResult, overviewResult, dealsResult, briefsResult] = await Promise.all([
+    load(getMe),
+    load(getCreatorOverview),
+    load(() => getMyDeals({ pageSize: 50 })),
+    load(() => getOpenBriefs({ pageSize: 10 })),
+  ])
+
+  if (!meResult.ok) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" />
+        <ErrorState error={meResult.error} />
+      </div>
+    )
+  }
+
+  const { user, creator, profileCompletion } = meResult.data
+  const overview = overviewResult.ok ? overviewResult.data : null
+  const deals = dealsResult.ok ? dealsResult.data.items : []
+
+  const actionable = deals.filter((d) => ACTIONABLE.includes(d.status)).slice(0, 8)
+  const details = await getDealDetails(actionable.map((d) => d.id))
+  const moves = actionable
+    .flatMap((d) => {
+      const detail = details.get(d.id)
+      return detail ? movesFor(d, detail) : []
+    })
+    .sort((a, b) => a.priority - b.priority || a.due - b.due)
+
+  const inboundOffers = deals.filter((d) => (d.status === "OFFER_SENT" || d.status === "NEGOTIATING") && d.awaitingParty === "CREATOR").length
+  const chart = (overview?.monthlyEarnings ?? []).slice(-6).map((m) => ({ label: monthLabel(m.month), net: m.amount }))
+
+  // Recommended briefs: the newest open ones the creator hasn't applied to, with a real AI fit score for the top few.
+  const candidates: BriefDTO[] = briefsResult.ok ? briefsResult.data.items.filter((b) => !b.myApplication).slice(0, 3) : []
+  const fits = await Promise.all(candidates.map((b) => soft(() => getBriefFit(b.id))))
+  const recommended = candidates
+    .map((brief, i) => ({ brief, fit: fits[i] as BriefFit | null }))
+    .sort((a, b) => (b.fit?.matchScore ?? -1) - (a.fit?.matchScore ?? -1))
+
+  const checklist = completionChecklist(profileCompletion)
+  const strength = profileCompletion.percent
   const done = checklist.filter((c) => c.done).length
-  const strength = Math.round((done / checklist.length) * 100)
   const firstName = user.name.split(" ")[0]
 
   return (
@@ -142,12 +159,31 @@ export default async function CreatorDashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Lifetime earnings" value={inr(lifetime)} icon={Wallet} hint={thisMonth ? `${inr(thisMonth)} paid out this month` : "Net of platform fees"} />
-        <StatCard label="In escrow for you" value={inr(inEscrow)} icon={Lock} hint={`${escrowMilestones.length} milestone${escrowMilestones.length === 1 ? "" : "s"} secured by brands`} />
-        <StatCard label="Pending offers" value={offers.length} icon={Handshake} hint={offers.length ? "Brands are waiting on your reply" : "No offers awaiting you"} />
-        <StatCard label="Shortlisted" value={shortlisted} icon={Star} hint={shortlisted ? "Brands are considering you" : "Apply to briefs to get shortlisted"} />
-      </div>
+      {overview ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Earned to date" value={inr(overview.totalEarned)} icon={Wallet} hint="Net payouts marked paid" />
+          <StatCard
+            label="In escrow for you"
+            value={inr(overview.pending.inEscrow)}
+            icon={Lock}
+            hint={overview.pending.approvedAwaitingRelease ? `${inr(overview.pending.approvedAwaitingRelease)} approved, awaiting release` : "Funded by brands before work starts"}
+          />
+          <StatCard
+            label="Pending offers"
+            value={inboundOffers}
+            icon={Handshake}
+            hint={inboundOffers ? "Brands are waiting on your reply" : "No offers awaiting you"}
+          />
+          <StatCard
+            label="Win rate"
+            value={overview.applications.winRate !== null ? `${Math.round(overview.applications.winRate * 100)}%` : "—"}
+            icon={Star}
+            hint={overview.applications.total ? `${overview.applications.offered} of ${overview.applications.total} applications` : "No applications yet"}
+          />
+        </div>
+      ) : (
+        !overviewResult.ok && <ErrorState error={overviewResult.error} compact />
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 space-y-6 lg:col-span-2">
@@ -157,7 +193,11 @@ export default async function CreatorDashboard() {
             action={moves.length > 0 ? <Pill tone="brand">{moves.length} to do</Pill> : undefined}
             bodyClassName="p-0"
           >
-            {moves.length === 0 ? (
+            {!dealsResult.ok ? (
+              <div className="p-5">
+                <ErrorState error={dealsResult.error} compact />
+              </div>
+            ) : moves.length === 0 ? (
               <div className="flex flex-col items-center px-6 py-10 text-center">
                 <span className="grid size-11 place-items-center rounded-full bg-success-soft text-success">
                   <PartyPopper className="size-5" />
@@ -196,8 +236,18 @@ export default async function CreatorDashboard() {
             )}
           </Panel>
 
-          <Panel title="Earnings by month" description="Net payouts released from escrow, last 6 months." action={<TextLink href="/creator/earnings" className="text-sm">Details</TextLink>}>
-            {lifetime === 0 ? (
+          <Panel
+            title="Earnings by month"
+            description="Net payouts released from escrow, last 6 months."
+            action={
+              <TextLink href="/creator/earnings" className="text-sm">
+                Details
+              </TextLink>
+            }
+          >
+            {!overview ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Earnings couldn&apos;t be loaded just now.</p>
+            ) : overview.totalEarned === 0 ? (
               <div className="py-8 text-center">
                 <p className="font-medium">Your first payout is closer than it looks</p>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -233,7 +283,7 @@ export default async function CreatorDashboard() {
                     <Link href={item.href} className="group flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted">
                       <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between text-sm font-medium">
+                        <div className="flex items-center justify-between gap-2 text-sm font-medium">
                           {item.label}
                           <span className="text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100">Fix →</span>
                         </div>
@@ -244,6 +294,7 @@ export default async function CreatorDashboard() {
                 </li>
               ))}
             </ul>
+            {creator === null && <p className="mt-3 text-xs text-muted-foreground">Your creator profile is still being set up.</p>}
           </Panel>
 
           <Panel
@@ -252,28 +303,40 @@ export default async function CreatorDashboard() {
                 <Sparkles className="size-4 text-primary" /> Recommended for you
               </span>
             }
-            description="Live briefs ranked by your match score."
-            action={<TextLink href="/creator/marketplace" className="text-sm">All</TextLink>}
+            description="Live briefs with your AI fit score."
+            action={
+              <TextLink href="/creator/marketplace" className="text-sm">
+                All
+              </TextLink>
+            }
             bodyClassName="p-0"
           >
-            {recommended.length === 0 ? (
+            {!briefsResult.ok ? (
+              <div className="p-5">
+                <ErrorState error={briefsResult.error} compact />
+              </div>
+            ) : recommended.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-muted-foreground">No new live briefs right now — we&apos;ll notify you when brands post.</p>
             ) : (
               <ul className="divide-y">
-                {recommended.map(({ brief, match }) => (
+                {recommended.map(({ brief, fit }) => (
                   <li key={brief.id}>
                     <Link href={`/creator/briefs/${brief.id}`} className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50">
-                      <ScoreRing score={match.score} size={42} />
+                      {fit ? <ScoreRing score={fit.matchScore} size={42} /> : <span className="grid size-[42px] shrink-0 place-items-center rounded-full border border-dashed text-[10px] text-muted-foreground">fit n/a</span>}
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium group-hover:text-primary">{brief.title}</div>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Avatar name={brief.brand.companyName} src={brief.brand.logoUrl} size={14} />
-                          <span className="truncate">{brief.brand.companyName}</span>
-                          {brief.brand.verified && <BadgeCheck className="size-3 shrink-0 text-primary" />}
-                          <span>· {brief.budgetPerCreator ? inr(brief.budgetPerCreator) : "Open budget"}</span>
+                          <Avatar name={brief.brand?.companyName ?? "Brand"} src={brief.brand?.logoUrl} size={14} />
+                          <span className="truncate">{brief.brand?.companyName ?? "Brand on hustl."}</span>
+                          {brief.brand?.verified && <BadgeCheck className="size-3 shrink-0 text-primary" />}
+                          <span>· {inr(brief.budgetPerCreator)}</span>
                         </div>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {match.disqualifiers[0] ? <span className="text-warning">{match.disqualifiers[0]}</span> : (match.reasons[0] ?? `Posted ${timeAgo(brief.createdAt)}`)}
+                          {fit?.disqualifiers[0] ? (
+                            <span className="text-warning">{fit.disqualifiers[0]}</span>
+                          ) : (
+                            (fit?.matchReasons[0] ?? `Posted ${timeAgo(brief.publishedAt ?? brief.createdAt)} · fit score unavailable`)
+                          )}
                         </p>
                       </div>
                     </Link>

@@ -98,7 +98,7 @@ Elasticsearch indices `creators`, `briefs` when `ELASTICSEARCH_URL` is set; othe
 
 - Consumes all business topics → `notifications` rows (idempotent on event id) + optional email (SendGrid when `SENDGRID_API_KEY`) + Socket.io push `notification:new`.
 - Conversations are created on `offer.sent` (deal) and when an application is shortlisted; participants = brand user + creator user.
-- `GET /conversations` (with last message, unread count), `GET /conversations/:id/messages?before`, `POST /conversations/:id/messages` `{ body, attachmentIds? }` (emits `message.sent`, pushes `message:new`), `POST /conversations/:id/read`, `GET /conversations/unread-count`.
+- `GET /conversations?dealId=&cursor=` (with last message, unread count; `dealId` returns just that deal's thread), `GET /conversations/:id/messages?before`, `POST /conversations/:id/messages` `{ body, attachmentIds? }` (emits `message.sent`, pushes `message:new`), `POST /conversations/:id/read`, `GET /conversations/unread-count`.
 - `GET /notifications?unread`, `POST /notifications/read` `{ ids? }`, `GET /notifications/unread-count`.
 - Socket.io at `/socket.io` authenticated with the access token (`auth: { token }`); rooms `user:<id>`, `conversation:<id>`; Redis adapter when `REDIS_URL` is set.
 

@@ -1,15 +1,30 @@
 import Link from "next/link"
-import { BadgeCheck, ExternalLink, ShieldAlert, ShieldCheck } from "lucide-react"
+import { BadgeCheck, ExternalLink, ShieldAlert } from "lucide-react"
+import { UPFRONT_MIN_RELIABILITY } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { PageHeader, Panel, Pill } from "@/components/app/ui"
-import { BrandProfileForm, PlanPicker, VerifyKycButton } from "@/components/brand/settings-forms"
-import { UPFRONT_MIN_RELIABILITY } from "@/lib/payments/fees"
-import { requireBrand } from "@/lib/session"
+import { BrandProfileForm, PlanCards, VerificationRequestForm } from "@/components/brand/settings-forms"
+import { ErrorPanel } from "@/components/brand/error-panel"
+import { loadBrandProfile, loadMe, loadVerifications } from "@/components/brand/data"
 
 export const metadata = { title: "Settings · hustl." }
 
 export default async function BrandSettingsPage() {
-  const { user, brand } = await requireBrand()
+  const [profileRes, meRes, verificationsRes] = await Promise.all([loadBrandProfile(), loadMe(), loadVerifications()])
+
+  if (!profileRes.ok) {
+    return (
+      <div>
+        <PageHeader title="Settings" />
+        <ErrorPanel error={profileRes.error} title="Couldn't load your company profile" />
+      </div>
+    )
+  }
+
+  const brand = profileRes.data
+  const user = meRes.ok ? meRes.data.user : null
+  const kycStatus = user?.kycStatus ?? "NONE"
+  const latestVerification = verificationsRes.ok ? (verificationsRes.data.find((v) => v.type === "BRAND_BUSINESS") ?? null) : null
 
   return (
     <div className="space-y-6">
@@ -27,17 +42,7 @@ export default async function BrandSettingsPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Panel title="Company profile" description={`hustl.in/brands/${brand.slug}`} className="lg:col-span-2">
-          <BrandProfileForm
-            initial={{
-              companyName: brand.companyName,
-              website: brand.website,
-              industry: brand.industry,
-              description: brand.description,
-              location: brand.location,
-              size: brand.size,
-              logoUrl: brand.logoUrl ?? "",
-            }}
-          />
+          <BrandProfileForm profile={brand} />
         </Panel>
 
         <div className="space-y-6">
@@ -47,9 +52,19 @@ export default async function BrandSettingsPage() {
                 Business verification
               </span>
             }
-            action={user.kycVerified ? <Pill tone="success">Verified</Pill> : <Pill tone="warning">Not verified</Pill>}
+            action={
+              kycStatus === "VERIFIED" ? (
+                <Pill tone="success">Verified</Pill>
+              ) : kycStatus === "PENDING" ? (
+                <Pill tone="warning">Under review</Pill>
+              ) : kycStatus === "REJECTED" ? (
+                <Pill tone="danger">Rejected</Pill>
+              ) : (
+                <Pill tone="warning">Not verified</Pill>
+              )
+            }
           >
-            {user.kycVerified ? (
+            {kycStatus === "VERIFIED" ? (
               <div className="flex items-start gap-3">
                 <span className="grid size-10 shrink-0 place-items-center rounded-full bg-success-soft text-success">
                   <BadgeCheck className="size-5" />
@@ -67,32 +82,49 @@ export default async function BrandSettingsPage() {
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-warning-soft text-warning">
                     <ShieldAlert className="size-5" />
                   </span>
-                  <p className="text-muted-foreground">Verify your GSTIN / business PAN to unlock upfront payments and earn a verified badge creators trust.</p>
+                  <p className="text-muted-foreground">
+                    Submit your GSTIN / business PAN for review. Verification unlocks upfront payments and a badge creators trust.
+                  </p>
                 </div>
-                <VerifyKycButton />
-                <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <ShieldCheck className="mt-0.5 size-3 shrink-0" /> Test mode: verification is instant. In production this runs through the KYC provider.
-                </p>
+                {!meRes.ok ? (
+                  <ErrorPanel error={meRes.error} compact />
+                ) : (
+                  <VerificationRequestForm
+                    kycStatus={kycStatus}
+                    latest={latestVerification}
+                    defaults={{ legalName: brand.companyName, gstin: brand.gstin ?? "", website: brand.website ?? "" }}
+                  />
+                )}
               </div>
             )}
           </Panel>
 
           <Panel title="Account">
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Name</dt>
-                <dd className="truncate font-medium">{user.name}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Email</dt>
-                <dd className="truncate font-medium">{user.email}</dd>
-              </div>
-            </dl>
+            {!meRes.ok ? (
+              <ErrorPanel error={meRes.error} compact />
+            ) : (
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Name</dt>
+                  <dd className="truncate font-medium">{user?.name}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd className="truncate font-medium">{user?.email}</dd>
+                </div>
+                {meRes.data.profileCompletion && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Profile complete</dt>
+                    <dd className="font-medium tabular-nums">{meRes.data.profileCompletion.percent}%</dd>
+                  </div>
+                )}
+              </dl>
+            )}
           </Panel>
         </div>
 
         <Panel title="Plan" description="Your plan sets the platform fee added when you fund escrow. Creators never see it." className="lg:col-span-3">
-          <PlanPicker plan={brand.plan} />
+          <PlanCards plan={brand.plan} />
         </Panel>
       </div>
     </div>

@@ -1,20 +1,19 @@
 import Link from "next/link"
-import { BarChart3, Clock, Handshake, Info, Star, TrendingUp } from "lucide-react"
-import { Avatar, EmptyState, PageHeader, Panel, StatCard } from "@/components/app/ui"
+import { BarChart3, Clock, FileText, Handshake, Info, TrendingUp } from "lucide-react"
+import { EmptyState, PageHeader, Panel, StatCard } from "@/components/app/ui"
 import { SpendChart, StatusChart } from "@/components/brand/charts"
-import { creatorInclude, SPEND_TYPES } from "@/components/brand/data"
-import { monthKey, monthKeys } from "@/components/brand/helpers"
-import { db } from "@/lib/db"
-import { label } from "@/lib/deals/machine"
-import { inr } from "@/lib/format"
-import { requireBrand } from "@/lib/session"
+import { BrandStatusBadge } from "@/components/brand/status"
+import { ErrorPanel } from "@/components/brand/error-panel"
+import { loadCampaigns, loadOverview } from "@/components/brand/data"
+import { monthLabel, statusLabel } from "@/components/brand/helpers"
+import { inr, shortDate } from "@/lib/format"
 
 export const metadata = { title: "Analytics · hustl." }
 
-const STATUS_ORDER = ["OFFER_SENT", "CONTRACT_PENDING", "CONTRACT_SIGNED", "FUNDED", "IN_PROGRESS", "COMPLETED", "DISPUTED", "CANCELLED"]
 const STATUS_COLOR: Record<string, string> = {
   OFFER_SENT: "var(--chart-2)",
-  CONTRACT_PENDING: "var(--warning)",
+  NEGOTIATING: "var(--warning)",
+  AGREED: "var(--warning)",
   CONTRACT_SIGNED: "var(--chart-2)",
   FUNDED: "var(--primary)",
   IN_PROGRESS: "var(--primary)",
@@ -24,143 +23,129 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default async function BrandAnalyticsPage() {
-  const { user, brand } = await requireBrand()
-  const [deals, txs, reviews] = await Promise.all([
-    db.deal.findMany({
-      where: { brandId: brand.id },
-      include: { creator: { include: creatorInclude }, milestones: { select: { status: true, dueDate: true, submittedAt: true } } },
-    }),
-    db.transaction.findMany({ where: { deal: { brandId: brand.id }, status: "SUCCEEDED", type: { in: SPEND_TYPES } }, select: { type: true, amount: true, createdAt: true } }),
-    db.review.findMany({ where: { authorId: user.id }, select: { dealId: true, rating: true } }),
-  ])
+  const [overviewRes, campaignsRes] = await Promise.all([loadOverview(), loadCampaigns()])
 
-  if (deals.length === 0) {
+  if (!overviewRes.ok) {
     return (
       <div>
-        <PageHeader title="Analytics" description="Spend, deal velocity and creator performance across your campaigns." />
-        <EmptyState icon={BarChart3} title="No data yet" description="Analytics fill in once you've sent your first offer." action={<Link href="/brand/discover" className="text-sm font-medium text-primary hover:underline">Discover creators →</Link>} />
+        <PageHeader title="Analytics" description="Spend, deal velocity and campaign performance across your briefs." />
+        <ErrorPanel error={overviewRes.error} title="Couldn't load analytics" />
       </div>
     )
   }
 
-  const months = monthKeys(6)
-  const spend = months.map((m) => ({ month: m.label, escrow: 0, fees: 0 }))
-  for (const t of txs) {
-    const i = months.findIndex((m) => m.key === monthKey(t.createdAt))
-    if (i < 0) continue
-    if (t.type === "ESCROW_FUND") spend[i].escrow += t.amount
-    else spend[i].fees += t.amount
+  const o = overviewRes.data
+  const spend = o.monthlySpend.map((m) => ({ month: monthLabel(m.month), amount: m.amount }))
+  const byStatus = Object.entries(o.dealsByStatus)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => ({ label: statusLabel(status), count, color: STATUS_COLOR[status] ?? "var(--muted-foreground)" }))
+  const campaigns = campaignsRes.ok ? campaignsRes.data : []
+
+  if (o.totalDeals === 0 && campaigns.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Analytics" description="Spend, deal velocity and campaign performance across your briefs." />
+        <EmptyState
+          icon={BarChart3}
+          title="No data yet"
+          description="Analytics fill in once you've published a brief or sent your first offer."
+          action={
+            <Link href="/brand/discover" className="text-sm font-medium text-primary hover:underline">
+              Discover creators →
+            </Link>
+          }
+        />
+      </div>
+    )
   }
-  const spend6 = spend.reduce((s, m) => s + m.escrow + m.fees, 0)
 
-  const byStatus = STATUS_ORDER.map((s) => ({ label: label(s), count: deals.filter((d) => d.status === s).length, color: STATUS_COLOR[s] })).filter((s) => s.count > 0)
-
-  const committed = deals.filter((d) => d.status !== "CANCELLED")
-  const avgValue = committed.length ? Math.round(committed.reduce((s, d) => s + d.amount, 0) / committed.length) : 0
-  const funded = deals.filter((d) => d.fundedAt)
-  const avgDaysToFund = funded.length ? funded.reduce((s, d) => s + (d.fundedAt!.getTime() - d.createdAt.getTime()) / 86_400_000, 0) / funded.length : null
-  const completed = deals.filter((d) => d.status === "COMPLETED").length
-  const closed = deals.filter((d) => ["COMPLETED", "CANCELLED"].includes(d.status)).length
-  const ratingByDeal = new Map(reviews.map((r) => [r.dealId, r.rating]))
-
-  type Perf = { id: string; name: string; handle: string; avatar: string | null; deals: number; completed: number; value: number; onTime: number; submitted: number; ratings: number[] }
-  const perf = new Map<string, Perf>()
-  for (const d of deals) {
-    const p =
-      perf.get(d.creatorId) ??
-      ({ id: d.creatorId, name: d.creator.user.name, handle: d.creator.handle, avatar: d.creator.avatarUrl ?? d.creator.user.image, deals: 0, completed: 0, value: 0, onTime: 0, submitted: 0, ratings: [] } as Perf)
-    p.deals++
-    if (d.status === "COMPLETED") p.completed++
-    if (d.fundedAt) p.value += d.amount
-    for (const m of d.milestones) {
-      if (!m.submittedAt) continue
-      p.submitted++
-      if (!m.dueDate || m.submittedAt <= m.dueDate) p.onTime++
-    }
-    const r = ratingByDeal.get(d.id)
-    if (r) p.ratings.push(r)
-    perf.set(d.creatorId, p)
-  }
-  const creators = [...perf.values()].sort((a, b) => b.value - a.value || b.deals - a.deals)
+  const avgDaysToFund = o.avgHoursToFund === null ? null : o.avgHoursToFund / 24
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Analytics" description="Spend, deal velocity and creator performance across your campaigns." />
+      <PageHeader title="Analytics" description="Spend, deal velocity and campaign performance across your briefs." />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Spend · 6 months" value={inr(spend6)} icon={TrendingUp} hint="Escrow funding + fees" />
-        <StatCard label="Avg. deal value" value={inr(avgValue)} icon={Handshake} hint={`${committed.length} non-cancelled deals`} />
+        <StatCard label="Total spend" value={inr(o.totalSpend)} icon={TrendingUp} hint={`Escrow ${inr(o.spendBreakdown.escrowFunded)} + fees ${inr(o.spendBreakdown.brandFees + o.spendBreakdown.processingFees)}`} />
+        <StatCard label="Deals" value={o.totalDeals} icon={Handshake} hint={`${o.dealsByStatus.COMPLETED} completed`} />
         <StatCard
           label="Offer → funded"
           value={avgDaysToFund === null ? "—" : `${avgDaysToFund < 1 ? "<1" : avgDaysToFund.toFixed(1)} days`}
           icon={Clock}
-          hint={funded.length ? `Average across ${funded.length} funded deals` : "No funded deals yet"}
+          hint={avgDaysToFund === null ? "No funded deals yet" : "Average across funded deals"}
         />
-        <StatCard label="Completion rate" value={closed ? `${Math.round((completed / closed) * 100)}%` : "—"} icon={Star} hint={`${completed} completed of ${closed} closed`} />
+        <StatCard label="Live briefs" value={o.activeBriefs} icon={FileText} hint={`${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"} tracked`} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
-        <Panel title="Spend by month" description="Creator payments vs. fees" className="lg:col-span-3">
+        <Panel title="Spend by month" description="Escrow funding + fees, last 12 months" className="lg:col-span-3">
           <SpendChart data={spend} height={260} />
         </Panel>
-        <Panel title="Deals by status" description={`${deals.length} total`} className="lg:col-span-2">
-          <StatusChart data={byStatus} height={Math.max(160, byStatus.length * 36)} />
+        <Panel title="Deals by status" description={`${o.totalDeals} total`} className="lg:col-span-2">
+          {byStatus.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">No deals yet.</p>
+          ) : (
+            <StatusChart data={byStatus} height={Math.max(160, byStatus.length * 36)} />
+          )}
         </Panel>
       </div>
 
-      <Panel title="Creator performance" description="On-time = milestones submitted on or before their due date" bodyClassName="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-sm">
-            <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-              <tr>
-                <th className="px-5 py-2.5 font-medium">Creator</th>
-                <th className="px-3 py-2.5 text-right font-medium">Deals</th>
-                <th className="px-3 py-2.5 text-right font-medium">Completed</th>
-                <th className="px-3 py-2.5 text-right font-medium">Funded value</th>
-                <th className="px-3 py-2.5 text-right font-medium">On-time</th>
-                <th className="px-5 py-2.5 text-right font-medium">Your rating</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {creators.map((c) => {
-                const onTime = c.submitted ? Math.round((c.onTime / c.submitted) * 100) : null
-                const rating = c.ratings.length ? c.ratings.reduce((s, r) => s + r, 0) / c.ratings.length : null
-                return (
-                  <tr key={c.id} className="hover:bg-muted/30">
-                    <td className="px-5 py-3">
-                      <Link href={`/creators/${c.handle}`} className="flex items-center gap-2.5 hover:underline">
-                        <Avatar name={c.name} src={c.avatar} size={30} />
-                        <span className="truncate font-medium">{c.name}</span>
+      <Panel title="Campaign performance" description="Per brief: applications, shortlists, deals and spend" bodyClassName="p-0">
+        {!campaignsRes.ok ? (
+          <div className="p-5">
+            <ErrorPanel error={campaignsRes.error} compact />
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="p-5">
+            <EmptyState icon={FileText} title="No campaigns yet" description="Publish a brief and its funnel shows up here." />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">Brief</th>
+                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Applications</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Shortlisted</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Deals</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Avg. match</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Spend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {campaigns.map((c) => (
+                  <tr key={c.briefId} className="hover:bg-muted/30">
+                    <td className="max-w-[280px] px-5 py-3">
+                      <Link href={`/brand/briefs/${c.briefId}`} className="block truncate font-medium hover:underline">
+                        {c.title}
                       </Link>
+                      <span className="block truncate text-xs text-muted-foreground">{c.publishedAt ? `Published ${shortDate(c.publishedAt)}` : "Not published"}</span>
                     </td>
-                    <td className="px-3 py-3 text-right tabular-nums">{c.deals}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{c.completed}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{inr(c.value)}</td>
+                    <td className="px-3 py-3">
+                      <BrandStatusBadge status={c.status} />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{c.applications}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{c.shortlisted}</td>
                     <td className="px-3 py-3 text-right tabular-nums">
-                      {onTime === null ? <span className="text-muted-foreground">—</span> : <span className={onTime >= 90 ? "text-success" : onTime < 70 ? "text-warning" : ""}>{onTime}%</span>}
+                      {c.deals}
+                      <span className="text-muted-foreground"> / {c.offers} offered</span>
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums">
-                      {rating === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1">
-                          <Star className="size-3.5 fill-warning text-warning" /> {rating.toFixed(1)}
-                        </span>
-                      )}
-                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{c.avgMatchScore === null ? <span className="text-muted-foreground">—</span> : Math.round(c.avgMatchScore)}</td>
+                    <td className="px-5 py-3 text-right font-medium tabular-nums">{inr(c.spend)}</td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
 
       <div className="flex items-start gap-3 rounded-lg border border-dashed bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
         <Info className="mt-0.5 size-4 shrink-0" />
         <p>
-          <span className="font-medium text-foreground">Post-level reach and engagement are coming.</span> Once creators connect their Instagram and YouTube accounts, views, reach and engagement
-          for each delivered post will appear here automatically. We don't show estimates in the meantime.
+          <span className="font-medium text-foreground">Post-level reach and engagement are coming.</span> Once creators connect their Instagram and YouTube accounts, views, reach and engagement for
+          each delivered post appear here automatically. We don't show estimates in the meantime.
         </p>
       </div>
     </div>

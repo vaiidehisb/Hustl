@@ -25,7 +25,12 @@ export function WithdrawButton({ applicationId, briefTitle, size = "sm" }: { app
   const withdraw = () =>
     startTransition(async () => {
       const res = await withdrawApplicationAction(applicationId)
-      if (!res.ok) return void toast.error(res.error)
+      if (!res.ok) {
+        // 409: the brand already moved the application on (offer sent, rejected…).
+        toast.error(res.error.message)
+        router.refresh()
+        return
+      }
       toast.success("Application withdrawn", { description: "You can re-apply while the brief is still live." })
       router.refresh()
     })

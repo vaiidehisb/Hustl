@@ -222,11 +222,12 @@ export async function conversationRoutes(app: FastifyInstance) {
     const cursorSql = cursor
       ? Prisma.sql`AND (COALESCE(c.last_message_at, c.created_at), c.id) < (${cursor.at.toISOString()}::timestamp, ${cursor.id}::uuid)`
       : Prisma.empty
+    const dealSql = q.dealId ? Prisma.sql`AND c.deal_id = ${q.dealId}::uuid` : Prisma.empty
     const rows = await prisma.$queryRaw<{ id: string; sort_at: Date }[]>`
       SELECT c.id::text AS id, COALESCE(c.last_message_at, c.created_at) AS sort_at
       FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id AND p.user_id = ${uid(req)}::uuid
-      WHERE TRUE ${cursorSql}
+      WHERE TRUE ${cursorSql} ${dealSql}
       ORDER BY sort_at DESC, c.id DESC
       LIMIT ${q.limit + 1}`
     const page = rows.slice(0, q.limit)

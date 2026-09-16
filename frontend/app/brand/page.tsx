@@ -1,92 +1,84 @@
 import Link from "next/link"
 import { ArrowRight, CheckCircle2, FileText, Handshake, Inbox, PenLine, Plus, ShieldCheck, Sparkles, Wallet } from "lucide-react"
+import type { ApplicationDTO, DealDetail, DealSummary } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
-import { Avatar, EmptyState, PageHeader, Panel, Pill, ScoreRing, StatCard, StatusBadge, TextLink } from "@/components/app/ui"
+import { Avatar, EmptyState, PageHeader, Panel, Pill, ScoreRing, StatCard, TextLink } from "@/components/app/ui"
 import { SpendChart } from "@/components/brand/charts"
 import { MatchRow } from "@/components/brand/match-row"
-import { brandFee, creatorInclude, SPEND_TYPES, toOfferBrief, toRowCreator } from "@/components/brand/data"
-import { monthKey, monthKeys } from "@/components/brand/helpers"
-import { db } from "@/lib/db"
-import { rankCreators } from "@/lib/ai/match"
+import { BrandStatusBadge } from "@/components/brand/status"
+import { ErrorPanel, AiErrorPanel } from "@/components/brand/error-panel"
+import { loadApplications, loadBriefs, loadDeals, loadMatches, loadMe, loadOverview, soft, dealDetail } from "@/components/brand/data"
+import { looksActionable, monthLabel } from "@/components/brand/helpers"
 import { compact, inr, timeAgo } from "@/lib/format"
-import { requireBrand } from "@/lib/session"
+import { requireRole } from "@/lib/auth/session"
 
 export const metadata = { title: "Dashboard · hustl." }
 
-type QueueItem = { key: string; href: string; icon: typeof Inbox; title: string; detail: string; cta: string; at: Date; tone: "warning" | "brand" | "info" }
+type QueueItem = { key: string; href: string; icon: typeof Inbox; title: string; detail: string; cta: string; at: string; tone: "warning" | "brand" | "info" }
+
+/** The queue is derived from `allowedActions` on each deal the API says we can act on. */
+function queueFor(deal: DealDetail): QueueItem[] {
+  const out: QueueItem[] = []
+  const who = deal.creator.name
+  const href = `/brand/deals/${deal.id}`
+  const actions = new Set(deal.allowedActions)
+
+  if (actions.has("ACCEPT") || actions.has("COUNTER"))
+    out.push({ key: `${deal.id}-respond`, href, icon: Handshake, title: `${who} is waiting on your response`, detail: `${deal.title} · ${inr(deal.amount)}`, cta: "Respond", at: deal.updatedAt, tone: "brand" })
+  if (actions.has("SIGN")) out.push({ key: `${deal.id}-sign`, href, icon: PenLine, title: "Contract ready to sign", detail: `${who} · ${deal.title}`, cta: "Sign", at: deal.updatedAt, tone: "info" })
+  if (actions.has("FUND"))
+    out.push({ key: `${deal.id}-fund`, href, icon: Wallet, title: "Fund escrow to start", detail: `${who} · ${deal.title} · ${inr(deal.amount)}`, cta: "Fund", at: deal.updatedAt, tone: "brand" })
+  if (actions.has("REVIEW")) out.push({ key: `${deal.id}-review`, href, icon: CheckCircle2, title: `Leave a review for ${who}`, detail: deal.title, cta: "Review", at: deal.updatedAt, tone: "info" })
+
+  for (const m of deal.milestones) {
+    if (!m.allowedActions.includes("APPROVE")) continue
+    out.push({
+      key: m.id,
+      href,
+      icon: CheckCircle2,
+      title: `Review "${m.title}"`,
+      detail: `${who} · ${deal.title} · ${inr(m.amount)}`,
+      cta: "Review",
+      at: m.submittedAt ?? deal.updatedAt,
+      tone: "warning",
+    })
+  }
+  return out
+}
 
 export default async function BrandDashboard() {
-  const { user, brand } = await requireBrand()
-  const since = monthKeys(6)[0].start
+  const session = await requireRole("BRAND", "/brand")
+  const [overview, dealsRes, briefsRes, meRes] = await Promise.all([loadOverview(), loadDeals({ pageSize: 50 }), loadBriefs({ pageSize: 20 }), loadMe()])
 
-  const [activeDeals, openDeals, txs, liveBriefs, applications, newestBrief] = await Promise.all([
-    db.deal.count({ where: { brandId: brand.id, status: { in: ["FUNDED", "IN_PROGRESS"] } } }),
-    db.deal.findMany({
-      where: {
-        brandId: brand.id,
-        OR: [
-          { status: "OFFER_SENT", awaitingParty: "BRAND" },
-          { status: "CONTRACT_PENDING", brandSignedAt: null },
-          { status: "CONTRACT_SIGNED" },
-          { milestones: { some: { status: "SUBMITTED" } } },
-        ],
-      },
-      include: { creator: { include: creatorInclude }, milestones: { where: { status: "SUBMITTED" }, orderBy: { order: "asc" } } },
-      orderBy: { updatedAt: "desc" },
-    }),
-    db.transaction.findMany({ where: { deal: { brandId: brand.id }, status: "SUCCEEDED" }, select: { type: true, amount: true, createdAt: true } }),
-    db.brief.count({ where: { brandId: brand.id, status: "PUBLISHED" } }),
-    db.application.findMany({
-      where: { brief: { brandId: brand.id }, status: { in: ["APPLIED", "SHORTLISTED"] } },
-      include: { creator: { include: creatorInclude }, brief: { select: { id: true, title: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
-    db.brief.findFirst({ where: { brandId: brand.id, status: "PUBLISHED" }, orderBy: { createdAt: "desc" }, include: { applications: { select: { creatorId: true } } } }),
+  const brand = meRes.ok ? meRes.data.brand : null
+  const kycVerified = meRes.ok && meRes.data.user.kycStatus === "VERIFIED"
+  const plan = brand?.plan ?? "STARTER"
+
+  const deals: DealSummary[] = dealsRes.ok ? dealsRes.data : []
+  const candidates = deals.filter(looksActionable).slice(0, 6)
+  const details = await Promise.all(candidates.map((d) => soft(() => dealDetail(d.id))))
+  const queue = details
+    .filter((d): d is DealDetail => !!d)
+    .flatMap(queueFor)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+
+  const liveBriefs = briefsRes.ok ? briefsRes.data.filter((b) => b.status === "PUBLISHED") : []
+  const newestBrief = liveBriefs[0] ?? null
+
+  const [appsRes, matchesRes] = await Promise.all([
+    newestBrief ? loadApplications(newestBrief.id, { status: "APPLIED", pageSize: 5 }) : null,
+    newestBrief ? loadMatches(newestBrief.id, 3) : null,
   ])
+  const applications: ApplicationDTO[] = appsRes?.ok ? appsRes.data : []
 
-  const sum = (types: string[]) => txs.filter((t) => types.includes(t.type)).reduce((s, t) => s + t.amount, 0)
-  const inEscrow = Math.max(0, sum(["ESCROW_FUND"]) - sum(["RELEASE", "CREATOR_FEE", "REFUND"]))
-  const totalSpent = sum(SPEND_TYPES) - sum(["REFUND"])
-
-  const months = monthKeys(6)
-  const spend = months.map((m) => ({ month: m.label, escrow: 0, fees: 0 }))
-  for (const t of txs) {
-    if (!SPEND_TYPES.includes(t.type) || t.createdAt < since) continue
-    const i = months.findIndex((m) => m.key === monthKey(t.createdAt))
-    if (i < 0) continue
-    if (t.type === "ESCROW_FUND") spend[i].escrow += t.amount
-    else spend[i].fees += t.amount
-  }
-
-  const queue: QueueItem[] = []
-  for (const d of openDeals) {
-    const name = d.creator.user.name
-    for (const m of d.milestones)
-      queue.push({ key: m.id, href: `/brand/deals/${d.id}`, icon: CheckCircle2, title: `Review "${m.title}"`, detail: `${name} · ${d.title} · ${inr(m.amount)}`, cta: "Review", at: m.submittedAt ?? d.updatedAt, tone: "warning" })
-    if (d.status === "OFFER_SENT" && d.awaitingParty === "BRAND")
-      queue.push({ key: d.id, href: `/brand/deals/${d.id}`, icon: Handshake, title: `${name} sent a counter-offer`, detail: `${d.title} · ${inr(d.amount)}`, cta: "Respond", at: d.updatedAt, tone: "brand" })
-    if (d.status === "CONTRACT_PENDING" && !d.brandSignedAt)
-      queue.push({ key: d.id, href: `/brand/deals/${d.id}`, icon: PenLine, title: "Contract ready to sign", detail: `${name} · ${d.title}`, cta: "Sign", at: d.updatedAt, tone: "info" })
-    if (d.status === "CONTRACT_SIGNED")
-      queue.push({ key: d.id, href: `/brand/deals/${d.id}`, icon: Wallet, title: "Fund escrow to start", detail: `${name} · ${d.title} · ${inr(d.amount)}`, cta: "Fund", at: d.updatedAt, tone: "brand" })
-  }
-  queue.sort((a, b) => b.at.getTime() - a.at.getTime())
-
-  const matches = newestBrief
-    ? rankCreators(
-        await db.creatorProfile.findMany({ where: { id: { notIn: newestBrief.applications.map((a) => a.creatorId) } }, include: creatorInclude }),
-        newestBrief,
-        3,
-      )
-    : []
-
-  const firstName = user.name.split(" ")[0]
+  const spend = (overview.ok ? overview.data.monthlySpend.slice(-6) : []).map((m) => ({ month: monthLabel(m.month), amount: m.amount }))
+  const activeDeals = overview.ok ? overview.data.dealsByStatus.FUNDED + overview.data.dealsByStatus.IN_PROGRESS : 0
+  const firstName = session.name.split(" ")[0]
 
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={brand.companyName}
+        eyebrow={brand?.companyName}
         title={`Welcome back, ${firstName}`}
         description="Here's what's moving across your creator campaigns."
         actions={
@@ -105,12 +97,21 @@ export default async function BrandDashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active deals" value={activeDeals} icon={Handshake} hint="Funded or in delivery" />
-        <StatCard label="In escrow" value={inr(inEscrow)} icon={ShieldCheck} hint="Held until you approve work" />
-        <StatCard label="Total spent" value={inr(totalSpent)} icon={Wallet} hint="Creator payments + fees" />
-        <StatCard label="Live briefs" value={liveBriefs} icon={FileText} hint={liveBriefs ? "Accepting applications" : "Post one to get applicants"} />
-      </div>
+      {overview.ok ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Active deals" value={activeDeals} icon={Handshake} hint="Funded or in delivery" />
+          <StatCard label="In escrow" value={inr(overview.data.escrowHeld)} icon={ShieldCheck} hint="Held until you approve work" />
+          <StatCard label="Total spent" value={inr(overview.data.totalSpend)} icon={Wallet} hint="Creator payments + fees" />
+          <StatCard
+            label="Live briefs"
+            value={overview.data.activeBriefs}
+            icon={FileText}
+            hint={overview.data.activeBriefs ? "Accepting applications" : "Post one to get applicants"}
+          />
+        </div>
+      ) : (
+        <ErrorPanel error={overview.error} title="Couldn't load your numbers" />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-5">
         <Panel
@@ -119,7 +120,11 @@ export default async function BrandDashboard() {
           description={queue.length ? `${queue.length} item${queue.length === 1 ? "" : "s"} waiting on you` : undefined}
           bodyClassName="p-0"
         >
-          {queue.length === 0 ? (
+          {!dealsRes.ok ? (
+            <div className="p-5">
+              <ErrorPanel error={dealsRes.error} compact />
+            </div>
+          ) : queue.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-12 text-center">
               <span className="grid size-11 place-items-center rounded-full bg-success-soft text-success">
                 <CheckCircle2 className="size-5" />
@@ -130,7 +135,7 @@ export default async function BrandDashboard() {
           ) : (
             <ul className="divide-y">
               {queue.slice(0, 8).map((q) => (
-                <li key={`${q.key}-${q.cta}`}>
+                <li key={q.key}>
                   <Link href={q.href} className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50">
                     <span
                       className={
@@ -160,21 +165,43 @@ export default async function BrandDashboard() {
           )}
         </Panel>
 
-        <Panel className="lg:col-span-2" title="Spend" description="Last 6 months · escrow funding + fees" action={<TextLink href="/brand/payments" className="text-xs">Ledger</TextLink>}>
-          <SpendChart data={spend} height={230} />
+        <Panel
+          className="lg:col-span-2"
+          title="Spend"
+          description="Last 6 months · escrow funding + fees"
+          action={
+            <TextLink href="/brand/payments" className="text-xs">
+              Ledger
+            </TextLink>
+          }
+        >
+          {overview.ok ? <SpendChart data={spend} height={230} /> : <ErrorPanel error={overview.error} compact />}
         </Panel>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Recent applications" action={<TextLink href="/brand/briefs" className="text-xs">All briefs</TextLink>} bodyClassName="p-0">
-          {applications.length === 0 ? (
+        <Panel
+          title="New applications"
+          description={newestBrief ? `For "${newestBrief.title}"` : undefined}
+          action={
+            <TextLink href="/brand/briefs" className="text-xs">
+              All briefs
+            </TextLink>
+          }
+          bodyClassName="p-0"
+        >
+          {appsRes && !appsRes.ok ? (
+            <div className="p-5">
+              <ErrorPanel error={appsRes.error} compact />
+            </div>
+          ) : applications.length === 0 ? (
             <div className="p-5">
               <EmptyState
                 icon={Inbox}
                 title="No open applications"
-                description={liveBriefs ? "Creators who apply to your live briefs show up here." : "Publish a brief and matched creators can apply."}
+                description={liveBriefs.length ? "Creators who apply to your live briefs show up here." : "Publish a brief and matched creators can apply."}
                 action={
-                  !liveBriefs && (
+                  !liveBriefs.length && (
                     <Button size="sm" asChild>
                       <Link href="/brand/briefs/new">Post a brief</Link>
                     </Button>
@@ -186,18 +213,19 @@ export default async function BrandDashboard() {
             <ul className="divide-y">
               {applications.map((a) => (
                 <li key={a.id}>
-                  <Link href={`/brand/briefs/${a.brief.id}`} className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50">
-                    <Avatar name={a.creator.user.name} src={a.creator.avatarUrl ?? a.creator.user.image} size={36} />
+                  <Link href={`/brand/briefs/${a.briefId}`} className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50">
+                    <Avatar name={a.creator?.name ?? "Creator"} src={a.creator?.avatarUrl} size={36} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
-                        {a.creator.user.name} <span className="font-normal text-muted-foreground">· {compact(a.creator.followers)}</span>
+                        {a.creator?.name ?? "Creator"}
+                        {a.creator ? <span className="font-normal text-muted-foreground"> · {compact(a.creator.followersTotal)}</span> : null}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {a.brief.title} · asks {inr(a.proposedRate)} · {timeAgo(a.createdAt)}
+                        asks {inr(a.proposedRate)} · {timeAgo(a.createdAt)}
                       </p>
                     </div>
-                    <StatusBadge status={a.status} className="hidden sm:inline-flex" />
-                    <ScoreRing score={a.matchScore} size={36} />
+                    <BrandStatusBadge status={a.status} className="hidden sm:inline-flex" />
+                    {a.matchScore !== null && <ScoreRing score={Math.round(a.matchScore)} size={36} />}
                   </Link>
                 </li>
               ))}
@@ -212,7 +240,13 @@ export default async function BrandDashboard() {
             </span>
           }
           description={newestBrief ? `For "${newestBrief.title}"` : "Ranked against your newest live brief"}
-          action={newestBrief && <TextLink href={`/brand/briefs/${newestBrief.id}?tab=matches`} className="text-xs">See all</TextLink>}
+          action={
+            newestBrief && (
+              <TextLink href={`/brand/briefs/${newestBrief.id}?tab=matches`} className="text-xs">
+                See all
+              </TextLink>
+            )
+          }
           bodyClassName="py-0"
         >
           {!newestBrief ? (
@@ -228,18 +262,21 @@ export default async function BrandDashboard() {
                 }
               />
             </div>
-          ) : matches.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No creators to rank yet.</p>
+          ) : matchesRes && !matchesRes.ok ? (
+            <div className="py-5">
+              <AiErrorPanel error={matchesRes.error} compact />
+            </div>
+          ) : !matchesRes?.ok || matchesRes.data.matches.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">No creators matched this brief yet.</p>
           ) : (
             <div className="divide-y">
-              {matches.map(({ creator, match }) => (
+              {matchesRes.data.matches.map((m) => (
                 <MatchRow
-                  key={creator.id}
-                  creator={toRowCreator(creator)}
-                  match={match}
-                  brief={toOfferBrief(newestBrief)}
-                  brandFeePct={brandFee(brand.plan)}
-                  kycVerified={user.kycVerified}
+                  key={m.creator.id}
+                  match={m}
+                  brief={{ id: newestBrief.id, title: newestBrief.title, deliverables: newestBrief.deliverables, budgetPerCreator: newestBrief.budgetPerCreator }}
+                  brandPlan={plan}
+                  kycVerified={kycVerified}
                   compactView
                 />
               ))}
@@ -248,7 +285,7 @@ export default async function BrandDashboard() {
         </Panel>
       </div>
 
-      {!user.kycVerified && (
+      {meRes.ok && !kycVerified && (
         <div className="flex flex-col gap-3 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
           <span className="grid size-10 shrink-0 place-items-center rounded-full bg-warning-soft text-warning">
             <ShieldCheck className="size-5" />
@@ -257,9 +294,11 @@ export default async function BrandDashboard() {
             <p className="font-medium">Verify your business</p>
             <p className="text-sm text-muted-foreground">Unlocks upfront payments for top creators and a verified badge on your public profile.</p>
           </div>
-          <Pill tone="warning">Unverified</Pill>
+          <Pill tone="warning">{meRes.data.user.kycStatus === "PENDING" ? "Under review" : "Unverified"}</Pill>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/brand/settings#kyc">Verify now</Link>
+            <Link href="/brand/settings#kyc">
+              {meRes.data.user.kycStatus === "PENDING" ? "View status" : "Request verification"}
+            </Link>
           </Button>
         </div>
       )}

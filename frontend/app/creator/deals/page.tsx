@@ -1,44 +1,45 @@
 import Link from "next/link"
 import { ArrowRight, BadgeCheck, CalendarClock, Handshake, Inbox, Lock } from "lucide-react"
+import { CREATOR_FEE_RATE, payoutBreakdown } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Avatar, EmptyState, PageHeader, Panel, Pill } from "@/components/app/ui"
 import { DealRow } from "@/components/creator/deal-row"
-import { creatorNextStep, paymentModeLabel } from "@/components/creator/lib"
-import { MAX_NEGOTIATION_ROUNDS } from "@/lib/deals/machine"
-import { payoutBreakdown } from "@/lib/payments/fees"
-import { db } from "@/lib/db"
+import { ErrorState } from "@/components/creator/states"
+import { ACTIVE_DEAL_STATUSES, isInboundOffer, paymentModeLabel } from "@/components/creator/lib"
 import { inr, shortDate, timeAgo } from "@/lib/format"
-import { requireCreator } from "@/lib/session"
+import { getDealDetails, getMyDeals, load } from "../data"
 
 export const metadata = { title: "Offers & deals · hustl." }
 
-const ACTIVE = ["OFFER_SENT", "CONTRACT_PENDING", "CONTRACT_SIGNED", "FUNDED", "IN_PROGRESS", "DISPUTED"]
-
 export default async function DealsPage() {
-  const { creator } = await requireCreator()
-  const deals = await db.deal.findMany({
-    where: { creatorId: creator.id },
-    include: {
-      brand: { select: { companyName: true, logoUrl: true, verified: true } },
-      milestones: { orderBy: { order: "asc" }, select: { title: true, status: true, dueDate: true, order: true, amount: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  })
+  const result = await load(() => getMyDeals({ pageSize: 100 }))
+  const header = <PageHeader title="Offers & deals" description="Every deal runs offer → contract → escrow → delivery → payout. Brands fund escrow before you start." />
 
-  const inbound = deals.filter((d) => d.status === "OFFER_SENT" && d.awaitingParty === "CREATOR")
-  const active = deals
-    .filter((d) => ACTIVE.includes(d.status) && !(d.status === "OFFER_SENT" && d.awaitingParty === "CREATOR"))
-    .sort((a, b) => Number(creatorNextStep(b).yourMove) - Number(creatorNextStep(a).yourMove))
-  const past = deals.filter((d) => !ACTIVE.includes(d.status))
-  const activeValue = active.filter((d) => ["FUNDED", "IN_PROGRESS"].includes(d.status)).reduce((s, d) => s + d.amount, 0)
+  if (!result.ok) {
+    return (
+      <div>
+        {header}
+        <ErrorState error={result.error} />
+      </div>
+    )
+  }
+
+  const deals = result.data.items
+  const inbound = deals.filter(isInboundOffer)
+  const active = deals.filter((d) => (ACTIVE_DEAL_STATUSES as readonly string[]).includes(d.status) && !isInboundOffer(d))
+  const past = deals.filter((d) => !(ACTIVE_DEAL_STATUSES as readonly string[]).includes(d.status))
+  const escrowValue = deals.filter((d) => d.status === "FUNDED" || d.status === "IN_PROGRESS").reduce((s, d) => s + d.amount, 0)
+
+  // `allowedActions` only exists on the deal detail — load it for the rows the creator is most likely to act on.
+  const details = await getDealDetails([...inbound, ...active].slice(0, 10).map((d) => d.id))
 
   return (
     <div>
       <PageHeader
         title="Offers & deals"
         description={
-          activeValue
-            ? `${inr(activeValue)} is secured in escrow across your live deals.`
+          escrowValue
+            ? `${inr(escrowValue)} is secured in escrow across your live deals.`
             : "Every deal runs offer → contract → escrow → delivery → payout. Brands fund escrow before you start."
         }
       />
@@ -69,7 +70,8 @@ export default async function DealsPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {inbound.map((d) => {
-                  const { net } = payoutBreakdown(d.amount, d.creatorFeePct)
+                  const detail = details.get(d.id)
+                  const { net } = payoutBreakdown(d.amount, detail?.feeRates.creator ?? CREATOR_FEE_RATE)
                   return (
                     <div key={d.id} className="relative flex flex-col overflow-hidden rounded-xl border border-primary/25 bg-card p-5 shadow-sm">
                       <div className="absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
@@ -82,8 +84,8 @@ export default async function DealsPage() {
                           </div>
                           <div className="text-xs text-muted-foreground">Received {timeAgo(d.updatedAt)}</div>
                         </div>
-                        <Pill tone={d.negotiationRound ? "warning" : "brand"}>
-                          {d.negotiationRound ? `Counter · round ${d.negotiationRound} of ${MAX_NEGOTIATION_ROUNDS}` : "New offer"}
+                        <Pill tone={d.negotiationRounds ? "warning" : "brand"}>
+                          {d.negotiationRounds ? `Counter · round ${d.negotiationRounds}${detail ? ` of ${d.negotiationRounds + detail.counterRoundsRemaining}` : ""}` : "New offer"}
                         </Pill>
                       </div>
                       <h3 className="mt-3 font-semibold leading-snug">{d.title}</h3>
@@ -91,11 +93,11 @@ export default async function DealsPage() {
                         <span className="font-display text-2xl font-bold tabular-nums">{inr(d.amount)}</span>
                         <span className="text-xs text-muted-foreground">you receive {inr(net)} after fees</span>
                       </div>
-                      {d.deliverables && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{d.deliverables}</p>}
+                      {detail?.deliverables && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{detail.deliverables}</p>}
                       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Lock className="size-3.5" /> {paymentModeLabel(d.paymentMode)}
-                          {d.milestones.length > 1 && ` · ${d.milestones.length} milestones`}
+                          {detail && detail.milestones.length > 1 && ` · ${detail.milestones.length} milestones`}
                         </span>
                         {d.dueDate && (
                           <span className="inline-flex items-center gap-1">
@@ -121,7 +123,7 @@ export default async function DealsPage() {
             ) : (
               <div className="divide-y">
                 {active.map((d) => (
-                  <DealRow key={d.id} deal={d} />
+                  <DealRow key={d.id} deal={d} actions={details.get(d.id)?.allowedActions ?? []} />
                 ))}
               </div>
             )}

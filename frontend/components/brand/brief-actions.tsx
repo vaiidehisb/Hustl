@@ -3,44 +3,61 @@
 import { useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Archive, Loader2, RotateCcw, Send, Star, Undo2, X } from "lucide-react"
+import { Archive, Loader2, RotateCcw, Send, Star, X } from "lucide-react"
+import type { ApplicationStatus, BriefStatus } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
-import { setApplicationStatusAction, setBriefStatusAction } from "@/app/actions/brand"
+import { closeBriefAction, publishBriefAction, setApplicationStatusAction, type ActionResult } from "@/app/actions/brand"
 
-export function BriefStatusActions({ briefId, status }: { briefId: string; status: string }) {
+function report(res: ActionResult<unknown>, success: string) {
+  if (res.ok) {
+    toast.success(success)
+    return true
+  }
+  const { code, message } = res.error
+  toast.error(message, {
+    description:
+      code === "SERVICE_UNAVAILABLE" || code === "TIMEOUT"
+        ? "The service didn't respond — nothing changed. Try again in a moment."
+        : code === "CONFLICT"
+          ? "Reload the page to see the latest state."
+          : undefined,
+  })
+  return false
+}
+
+export function BriefStatusActions({ briefId, status }: { briefId: string; status: BriefStatus }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const go = (to: "PUBLISHED" | "CLOSED", msg: string) =>
+
+  const go = (to: "PUBLISHED" | "CLOSED") =>
     start(async () => {
-      const res = await setBriefStatusAction(briefId, to)
-      if (!res.ok) return void toast.error(res.error)
-      toast.success(msg)
-      router.refresh()
+      const res = to === "CLOSED" ? await closeBriefAction(briefId) : await publishBriefAction(briefId)
+      if (report(res, to === "CLOSED" ? "Brief closed — no new applications" : "Brief is live")) router.refresh()
     })
 
   if (status === "PUBLISHED")
     return (
-      <Button variant="outline" onClick={() => go("CLOSED", "Brief closed — no new applications")} disabled={pending}>
+      <Button variant="outline" onClick={() => go("CLOSED")} disabled={pending}>
         {pending ? <Loader2 className="animate-spin" /> : <Archive />} Close brief
       </Button>
     )
   return (
-    <Button onClick={() => go("PUBLISHED", status === "DRAFT" ? "Brief is live" : "Brief reopened")} disabled={pending}>
+    <Button onClick={() => go("PUBLISHED")} disabled={pending}>
       {pending ? <Loader2 className="animate-spin" /> : status === "DRAFT" ? <Send /> : <RotateCcw />}
       {status === "DRAFT" ? "Publish" : "Reopen"}
     </Button>
   )
 }
 
-export function ApplicationStatusButtons({ applicationId, status, name }: { applicationId: string; status: string; name: string }) {
+/** The API only accepts SHORTLISTED and REJECTED transitions (409 otherwise). */
+export function ApplicationStatusButtons({ applicationId, status, name }: { applicationId: string; status: ApplicationStatus; name: string }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const set = (to: "APPLIED" | "SHORTLISTED" | "REJECTED", msg: string) =>
+
+  const set = (to: "SHORTLISTED" | "REJECTED", msg: string) =>
     start(async () => {
       const res = await setApplicationStatusAction(applicationId, to)
-      if (!res.ok) return void toast.error(res.error)
-      toast.success(msg)
-      router.refresh()
+      if (report(res, msg)) router.refresh()
     })
 
   if (status === "APPLIED")
@@ -58,12 +75,6 @@ export function ApplicationStatusButtons({ applicationId, status, name }: { appl
     return (
       <Button size="sm" variant="ghost" disabled={pending} onClick={() => set("REJECTED", `${name} marked not selected`)}>
         <X className="size-3.5" /> Reject
-      </Button>
-    )
-  if (status === "REJECTED")
-    return (
-      <Button size="sm" variant="ghost" disabled={pending} onClick={() => set("APPLIED", `${name} moved back to applied`)}>
-        <Undo2 className="size-3.5" /> Reconsider
       </Button>
     )
   return null

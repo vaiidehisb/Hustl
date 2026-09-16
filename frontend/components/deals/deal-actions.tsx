@@ -1,182 +1,87 @@
 "use client"
-
+// Every control here is rendered only when the server put the matching value in
+// `deal.allowedActions` / `milestone.allowedActions`. Nothing infers permissions.
 import { useState } from "react"
-import { Loader2, Plus, ShieldCheck, Star, Trash2 } from "lucide-react"
+import { Loader2, Plus, Star, Trash2 } from "lucide-react"
+import type { CounterOfferRequest, DealDetail, DealUiAction, MilestoneInput, PaymentMode } from "@hustl/contracts"
+import { MAX_COUNTER_ROUNDS } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
+  acceptOfferAction,
   cancelDealAction,
-  fundEscrowAction,
-  leaveReviewAction,
-  raiseDisputeAction,
-  respondToOfferAction,
+  counterOfferAction,
+  declineOfferAction,
+  getContractAction,
+  openDisputeAction,
+  reviewDealAction,
   signContractAction,
 } from "@/app/actions/deals"
 import { inr } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { useAction } from "./use-action"
+import { useApiAction } from "./use-deal-action"
 
 const Spinner = ({ on }: { on: boolean }) => (on ? <Loader2 className="size-4 animate-spin" /> : null)
 
-export function OfferActions({
-  dealId,
-  amount,
-  paymentMode,
-  milestones,
-  roundsLeft,
-}: {
-  dealId: string
-  amount: number
-  paymentMode: string
-  milestones: { title: string; percent: number }[]
-  roundsLeft: number
-}) {
-  const { pending, exec } = useAction()
-  const [open, setOpen] = useState(false)
-  const [counterAmount, setCounterAmount] = useState(amount)
-  const [rows, setRows] = useState(milestones)
-  const [note, setNote] = useState("")
-  const total = rows.reduce((s, r) => s + (Number(r.percent) || 0), 0)
-  const isMilestones = paymentMode === "MILESTONES"
+const latestOffer = (deal: DealDetail) => [...deal.offers].sort((a, b) => b.round - a.round)[0]
 
+/** Renders the deal-level controls the caller is allowed to take. */
+export function DealActionBar({ deal, signerName, only, className }: { deal: DealDetail; signerName: string; only?: DealUiAction[]; className?: string }) {
+  const can = (a: DealUiAction) => deal.allowedActions.includes(a) && (!only || only.includes(a))
+  if (!deal.allowedActions.some((a) => !only || only.includes(a))) return null
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button variant="ghost" disabled={pending} onClick={() => exec(() => respondToOfferAction(dealId, "DECLINE"), "Offer declined")}>
-        Decline
-      </Button>
-      {roundsLeft > 0 && (
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" disabled={pending}>
-              Counter
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Send a counter-offer</DialogTitle>
-              <DialogDescription>
-                {roundsLeft} round{roundsLeft === 1 ? "" : "s"} left. Be specific — clear reasoning gets accepted faster.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="counter-amount">Deal value (₹)</Label>
-                <Input id="counter-amount" type="number" min={500} value={counterAmount} onChange={(e) => setCounterAmount(Number(e.target.value))} />
-                <p className="text-xs text-muted-foreground">Currently {inr(amount)}</p>
-              </div>
-              {isMilestones && (
-                <div className="space-y-2">
-                  <Label>Milestones</Label>
-                  {rows.map((r, i) => (
-                    <div key={i} className="flex gap-2">
-                      <Input value={r.title} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
-                      <div className="relative w-24 shrink-0">
-                        <Input type="number" value={r.percent} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, percent: Number(e.target.value) } : x)))} className="pr-7" />
-                        <span className="absolute right-2.5 top-2 text-sm text-muted-foreground">%</span>
-                      </div>
-                      <Button variant="ghost" size="icon" disabled={rows.length === 1} onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label="Remove milestone">
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between">
-                    <Button variant="ghost" size="sm" onClick={() => setRows([...rows, { title: "New milestone", percent: 0 }])}>
-                      <Plus className="size-4" /> Add milestone
-                    </Button>
-                    <span className={cn("text-xs font-medium", total === 100 ? "text-success" : "text-destructive")}>{total}% of 100%</span>
-                  </div>
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="counter-note">Note</Label>
-                <Textarea id="counter-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Adding a third story covers the extra usage rights you asked for." />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                disabled={pending || (isMilestones && total !== 100)}
-                onClick={() => exec(() => respondToOfferAction(dealId, "COUNTER", { amount: counterAmount, milestones: rows, note }), "Counter-offer sent", () => setOpen(false))}
-              >
-                <Spinner on={pending} /> Send counter
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-      <Button disabled={pending} onClick={() => exec(() => respondToOfferAction(dealId, "ACCEPT"), "Offer accepted — contract is ready")}>
-        <Spinner on={pending} /> Accept offer
-      </Button>
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      {can("DECLINE") && <DeclineOffer dealId={deal.id} />}
+      {can("CANCEL") && <CancelDeal dealId={deal.id} />}
+      {can("COUNTER") && <CounterOfferDialog deal={deal} />}
+      {can("ACCEPT") && <AcceptOffer dealId={deal.id} />}
+      {can("SIGN") && <SignContractDialog deal={deal} signerName={signerName} />}
+      {can("REVIEW") && <ReviewDialog dealId={deal.id} subjectName={counterpartName(deal)} />}
     </div>
   )
 }
 
-export function SignContract({ dealId, signerName }: { dealId: string; signerName: string }) {
-  const { pending, exec } = useAction()
-  const [typed, setTyped] = useState("")
-  const [open, setOpen] = useState(false)
-  const matches = typed.trim().toLowerCase() === signerName.trim().toLowerCase()
+const counterpartName = (deal: DealDetail) => (deal.yourParty === "BRAND" ? deal.creator.name : deal.brand.companyName)
+
+export function AcceptOffer({ dealId }: { dealId: string }) {
+  const { pending, run } = useApiAction()
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>Sign contract</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Sign the contract</DialogTitle>
-          <DialogDescription>Type your full name exactly as shown to apply your e-signature. Read the contract terms on this page first.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-1.5">
-          <Label htmlFor="sig">Full name — {signerName}</Label>
-          <Input id="sig" value={typed} onChange={(e) => setTyped(e.target.value)} className="font-display text-lg italic" autoComplete="off" />
-        </div>
-        <DialogFooter>
-          <Button disabled={!matches || pending} onClick={() => exec(() => signContractAction(dealId), "Contract signed", () => setOpen(false))}>
-            <Spinner on={pending} /> Sign as {signerName}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Button disabled={pending} onClick={() => void run(() => acceptOfferAction(dealId), { success: "Offer accepted — the contract is ready to sign" })}>
+      <Spinner on={pending} /> Accept offer
+    </Button>
   )
 }
 
-export function FundEscrow({
-  dealId,
-  breakdown,
-  brandFeePct,
-  onHold,
-}: {
-  dealId: string
-  breakdown: { escrow: number; brandFee: number; processing: number; total: number }
-  brandFeePct: number
-  onHold: boolean
-}) {
-  const { pending, exec } = useAction()
+export function DeclineOffer({ dealId }: { dealId: string }) {
+  const { pending, run } = useApiAction()
   const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState("")
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button disabled={onHold}>{onHold ? "On safety hold (24h)" : `Fund ${inr(breakdown.total)}`}</Button>
+        <Button variant="ghost" disabled={pending}>
+          Decline
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Fund escrow</DialogTitle>
-          <DialogDescription>The deal value is held in escrow and released milestone by milestone as you approve work.</DialogDescription>
+          <DialogTitle>Decline this offer?</DialogTitle>
+          <DialogDescription>The other party is notified. A short reason helps them come back with something workable.</DialogDescription>
         </DialogHeader>
-        <dl className="space-y-2 rounded-lg border p-4 text-sm">
-          <div className="flex justify-between"><dt>Held in escrow</dt><dd className="tabular-nums">{inr(breakdown.escrow)}</dd></div>
-          <div className="flex justify-between text-muted-foreground"><dt>Platform fee ({Math.round(brandFeePct * 100)}%)</dt><dd className="tabular-nums">{inr(breakdown.brandFee)}</dd></div>
-          <div className="flex justify-between text-muted-foreground"><dt>Payment processing (2%)</dt><dd className="tabular-nums">{inr(breakdown.processing)}</dd></div>
-          <div className="flex justify-between border-t pt-2 font-semibold"><dt>Total today</dt><dd className="tabular-nums">{inr(breakdown.total)}</dd></div>
-        </dl>
-        <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
-          <ShieldCheck className="size-4" /> Test mode — no real money moves. Stripe Connect / Razorpay checkout replaces this step in production.
-        </p>
+        <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="The rate doesn't cover the usage rights requested." />
         <DialogFooter>
-          <Button disabled={pending} onClick={() => exec(() => fundEscrowAction(dealId), "Escrow funded — the creator can start", () => setOpen(false))}>
-            <Spinner on={pending} /> Pay {inr(breakdown.total)}
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Keep negotiating
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() => void run(() => declineOfferAction(dealId, reason.trim() || undefined), { success: "Offer declined", onSuccess: () => setOpen(false) })}
+          >
+            <Spinner on={pending} /> Decline offer
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -185,16 +90,192 @@ export function FundEscrow({
 }
 
 export function CancelDeal({ dealId }: { dealId: string }) {
-  const { pending, exec } = useAction()
+  const { pending, run } = useApiAction()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState("")
   return (
-    <Button variant="ghost" size="sm" disabled={pending} onClick={() => confirm("Cancel this deal? This can't be undone.") && exec(() => cancelDealAction(dealId), "Deal cancelled")}>
-      Cancel deal
-    </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" disabled={pending}>
+          Cancel deal
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancel this deal?</DialogTitle>
+          <DialogDescription>Deals can only be cancelled before escrow is funded. This can't be undone.</DialogDescription>
+        </DialogHeader>
+        <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Campaign was pulled forward and no longer needs this creator." />
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Keep the deal
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() => void run(() => cancelDealAction(dealId, reason.trim() || undefined), { success: "Deal cancelled", onSuccess: () => setOpen(false) })}
+          >
+            <Spinner on={pending} /> Cancel deal
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-export function DisputeDialog({ dealId, milestones }: { dealId: string; milestones: { id: string; title: string }[] }) {
-  const { pending, exec } = useAction()
+// ─── Counter offer ───────────────────────────────────────────────────────────
+
+type Row = { title: string; percent: number; dueDate?: string | null }
+
+export function CounterOfferDialog({ deal }: { deal: DealDetail }) {
+  const offer = latestOffer(deal)
+  const { pending, run } = useApiAction()
+  const [open, setOpen] = useState(false)
+  const [amount, setAmount] = useState(offer?.amount ?? deal.amount)
+  const [rows, setRows] = useState<Row[]>(
+    (offer?.milestones?.length ? offer.milestones : deal.milestones.map((m) => ({ title: m.title, percent: m.percent, dueDate: m.dueDate }))).map((m) => ({
+      title: m.title,
+      percent: m.percent,
+      dueDate: m.dueDate ?? null,
+    })),
+  )
+  const [note, setNote] = useState("")
+  const mode: PaymentMode = offer?.paymentMode ?? deal.paymentMode
+  const isMilestones = mode === "MILESTONES"
+  const total = rows.reduce((s, r) => s + (Number(r.percent) || 0), 0)
+  const roundsLeft = deal.counterRoundsRemaining
+  const valid = amount >= 500 && (!isMilestones || (total === 100 && rows.length >= 2 && rows.every((r) => r.title.trim().length >= 2)))
+
+  const submit = () => {
+    const body: CounterOfferRequest = {
+      amount: Math.round(amount),
+      paymentMode: mode,
+      ...(isMilestones ? { milestones: rows.map((r): MilestoneInput => ({ title: r.title.trim(), percent: Number(r.percent), dueDate: r.dueDate ?? null })) } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+    }
+    void run(() => counterOfferAction(deal.id, body), { success: "Counter-offer sent", onSuccess: () => setOpen(false) })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" disabled={pending}>
+          Counter
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Send a counter-offer</DialogTitle>
+          <DialogDescription>
+            {roundsLeft} counter round{roundsLeft === 1 ? "" : "s"} left of {MAX_COUNTER_ROUNDS}. Be specific — clear reasoning gets accepted faster.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="counter-amount">Deal value (₹)</Label>
+            <Input id="counter-amount" type="number" min={500} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+            <p className="text-xs text-muted-foreground">Currently {inr(offer?.amount ?? deal.amount)}</p>
+          </div>
+          {isMilestones && (
+            <div className="space-y-2">
+              <Label>Milestones</Label>
+              {rows.map((r, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input aria-label={`Milestone ${i + 1} title`} value={r.title} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
+                  <div className="relative w-24 shrink-0">
+                    <Input
+                      aria-label={`Milestone ${i + 1} percent`}
+                      type="number"
+                      value={r.percent}
+                      onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, percent: Number(e.target.value) } : x)))}
+                      className="pr-7"
+                    />
+                    <span className="absolute right-2.5 top-2 text-sm text-muted-foreground">%</span>
+                  </div>
+                  <Button variant="ghost" size="icon" disabled={rows.length <= 2} onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label={`Remove milestone ${i + 1}`}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+              <div className="flex items-center justify-between">
+                <Button variant="ghost" size="sm" onClick={() => setRows([...rows, { title: "New milestone", percent: 0 }])}>
+                  <Plus className="size-4" /> Add milestone
+                </Button>
+                <span className={cn("text-xs font-medium tabular-nums", total === 100 ? "text-success" : "text-destructive")}>{total}% of 100%</span>
+              </div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="counter-note">Note</Label>
+            <Textarea id="counter-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Adding a third story covers the extra usage rights you asked for." />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button disabled={pending || !valid} onClick={submit}>
+            <Spinner on={pending} /> Send counter
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Contract signature ──────────────────────────────────────────────────────
+
+export function SignContractDialog({ deal, signerName }: { deal: DealDetail; signerName: string }) {
+  const { pending, run } = useApiAction()
+  const [open, setOpen] = useState(false)
+  const [typed, setTyped] = useState("")
+  const [hash, setHash] = useState(deal.contract?.bodyHash)
+  const [stale, setStale] = useState(false)
+  const matches = typed.trim().toLowerCase() === signerName.trim().toLowerCase()
+
+  const sign = () =>
+    void run(() => signContractAction(deal.id, signerName.trim(), hash), {
+      success: "Contract signed",
+      onSuccess: () => setOpen(false),
+      onError: (fail) => {
+        // 409: the terms changed since this page was rendered — re-read the hash.
+        if (fail.status !== 409) return false
+        setStale(true)
+        void getContractAction(deal.id).then((res) => res.ok && setHash(res.data.bodyHash))
+        return true
+      },
+    })
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button disabled={pending}>Sign contract</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sign the contract</DialogTitle>
+          <DialogDescription>Read the terms on this page, then type your full name exactly as shown to apply your e-signature.</DialogDescription>
+        </DialogHeader>
+        {stale && (
+          <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+            The contract changed since you opened it. Refresh the page to read the current terms before signing.
+          </p>
+        )}
+        <div className="space-y-1.5">
+          <Label htmlFor="signature">Full name — {signerName}</Label>
+          <Input id="signature" value={typed} onChange={(e) => setTyped(e.target.value)} className="font-display text-lg italic" autoComplete="off" />
+        </div>
+        <DialogFooter>
+          <Button disabled={!matches || pending || stale} onClick={sign}>
+            <Spinner on={pending} /> Sign as {signerName}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Dispute & review ────────────────────────────────────────────────────────
+
+export function DisputeDialog({ dealId, milestones, windowHours }: { dealId: string; milestones: { id: string; title: string }[]; windowHours: number }) {
+  const { pending, run } = useApiAction()
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState("")
   const [milestoneId, setMilestoneId] = useState(milestones[0]?.id ?? "")
@@ -208,12 +289,19 @@ export function DisputeDialog({ dealId, milestones }: { dealId: string; mileston
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Raise a dispute</DialogTitle>
-          <DialogDescription>All pending releases on this deal freeze until the trust team decides. Share what was agreed and what happened.</DialogDescription>
+          <DialogDescription>
+            Disputes can be raised within {windowHours}h of a submission. All pending releases freeze until the hustl. trust team decides — share what was agreed and what happened.
+          </DialogDescription>
         </DialogHeader>
         {milestones.length > 0 && (
           <div className="space-y-1.5">
-            <Label htmlFor="dispute-ms">Milestone</Label>
-            <select id="dispute-ms" value={milestoneId} onChange={(e) => setMilestoneId(e.target.value)} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+            <Label htmlFor="dispute-milestone">Milestone</Label>
+            <select
+              id="dispute-milestone"
+              value={milestoneId}
+              onChange={(e) => setMilestoneId(e.target.value)}
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+            >
               {milestones.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.title}
@@ -225,9 +313,19 @@ export function DisputeDialog({ dealId, milestones }: { dealId: string; mileston
         <div className="space-y-1.5">
           <Label htmlFor="dispute-reason">What went wrong?</Label>
           <Textarea id="dispute-reason" rows={5} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <p className="text-xs text-muted-foreground">{reason.trim().length}/10 characters minimum</p>
         </div>
         <DialogFooter>
-          <Button variant="destructive" disabled={pending || reason.trim().length < 20} onClick={() => exec(() => raiseDisputeAction(dealId, reason, milestoneId || null), "Dispute raised — releases frozen", () => setOpen(false))}>
+          <Button
+            variant="destructive"
+            disabled={pending || reason.trim().length < 10}
+            onClick={() =>
+              void run(() => openDisputeAction(dealId, { reason: reason.trim(), evidenceIds: [], ...(milestoneId ? { milestoneId } : {}) }), {
+                success: "Dispute raised — releases are frozen",
+                onSuccess: () => setOpen(false),
+              })
+            }
+          >
             <Spinner on={pending} /> Submit dispute
           </Button>
         </DialogFooter>
@@ -236,8 +334,8 @@ export function DisputeDialog({ dealId, milestones }: { dealId: string; mileston
   )
 }
 
-export function ReviewForm({ dealId, subjectName }: { dealId: string; subjectName: string }) {
-  const { pending, exec } = useAction()
+export function ReviewDialog({ dealId, subjectName }: { dealId: string; subjectName: string }) {
+  const { pending, run } = useApiAction()
   const [open, setOpen] = useState(false)
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState("")
@@ -253,14 +351,17 @@ export function ReviewForm({ dealId, subjectName }: { dealId: string; subjectNam
         </DialogHeader>
         <div className="flex gap-1" role="radiogroup" aria-label="Rating">
           {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} type="button" role="radio" aria-checked={rating === n} onClick={() => setRating(n)} className="p-1">
+            <button key={n} type="button" role="radio" aria-checked={rating === n} aria-label={`${n} star${n === 1 ? "" : "s"}`} onClick={() => setRating(n)} className="p-1">
               <Star className={cn("size-7", n <= rating ? "fill-warning text-warning" : "text-muted-foreground")} />
             </button>
           ))}
         </div>
         <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="What stood out about working together?" />
         <DialogFooter>
-          <Button disabled={pending} onClick={() => exec(() => leaveReviewAction(dealId, rating, comment), "Thanks for the review!", () => setOpen(false))}>
+          <Button
+            disabled={pending}
+            onClick={() => void run(() => reviewDealAction(dealId, { rating, comment: comment.trim() }), { success: "Thanks for the review!", onSuccess: () => setOpen(false) })}
+          >
             <Spinner on={pending} /> Post review
           </Button>
         </DialogFooter>

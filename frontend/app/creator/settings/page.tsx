@@ -1,31 +1,36 @@
-import { BadgeCheck, ShieldCheck, Sparkles, TrendingUp } from "lucide-react"
+import { BadgeCheck, Sparkles, TrendingUp } from "lucide-react"
 import { PageHeader, Panel } from "@/components/app/ui"
 import { SocialsManager } from "@/components/creator/socials-manager"
-import type { SocialAccount } from "@/components/creator/lib"
-import { json } from "@/lib/db"
-import { requireCreator } from "@/lib/session"
+import { VerificationPanel } from "@/components/creator/verification-panel"
+import { ErrorState } from "@/components/creator/states"
+import { getMe, getSocialAccounts, getSocialProviders, getVerifications, load, soft } from "../data"
 
 export const metadata = { title: "Connect socials · hustl." }
 
-export default async function SettingsPage() {
-  const { user, creator } = await requireCreator()
-  const accounts = json<SocialAccount[]>(creator.platforms, [])
+const BENEFITS = [
+  { icon: Sparkles, title: "Better matches", body: "Brief platforms and follower minimums are checked against the accounts on your profile." },
+  { icon: TrendingUp, title: "Credible numbers", body: "Synced reach and engagement feed your niche authority and authenticity scores." },
+  { icon: BadgeCheck, title: "Path to verified", body: "Connected socials plus an approved identity check earn the badge brands filter for." },
+]
 
-  const benefits = [
-    { icon: Sparkles, title: "Better matches", body: "Brief platforms and follower minimums are checked against your connected accounts." },
-    { icon: TrendingUp, title: "Credible numbers", body: "Synced reach and engagement feed your niche authority and authenticity scores." },
-    { icon: BadgeCheck, title: "Path to verified", body: "Connected socials plus KYC earn the verified badge brands filter for." },
-  ]
+export default async function SettingsPage() {
+  const [accountsResult, meResult] = await Promise.all([load(getSocialAccounts), load(getMe)])
+  const [providers, verifications] = await Promise.all([soft(getSocialProviders), soft(getVerifications)])
+
+  const verified = meResult.ok ? !!meResult.data.creator?.verifiedAt || meResult.data.user.kycStatus === "VERIFIED" : false
 
   return (
     <div>
-      <PageHeader title="Connect socials" description="Link the accounts you create brand content on. Your totals and scores update every time you sync." />
+      <PageHeader title="Connect socials" description="Link the accounts you create brand content on. Verified data comes from Phyllo; anything you type in stays labelled self-reported." />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <SocialsManager accounts={accounts} lastSyncedAt={creator.lastSyncedAt?.toISOString() ?? null} />
+        <div className="min-w-0">
+          {accountsResult.ok ? <SocialsManager accounts={accountsResult.data} providers={providers} /> : <ErrorState error={accountsResult.error} />}
+        </div>
         <aside className="space-y-6">
+          <VerificationPanel verified={verified} requests={verifications ?? []} />
           <Panel title="Why connect?">
             <ul className="space-y-4">
-              {benefits.map((b) => (
+              {BENEFITS.map((b) => (
                 <li key={b.title} className="flex gap-3">
                   <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
                     <b.icon className="size-4" />
@@ -38,21 +43,7 @@ export default async function SettingsPage() {
               ))}
             </ul>
           </Panel>
-          <Panel title="Verification">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className={`mt-0.5 size-5 shrink-0 ${creator.verified || user.kycVerified ? "text-success" : "text-muted-foreground"}`} />
-              <p className="text-sm text-muted-foreground">
-                {creator.verified || user.kycVerified
-                  ? "You're verified. Brands see the badge on your profile and applications."
-                  : creator.socialsConnected
-                    ? "Socials connected. Verification completes after KYC is reviewed by the hustl. team."
-                    : "Connect at least one account to start verification."}
-              </p>
-            </div>
-          </Panel>
-          <p className="px-1 text-xs text-muted-foreground">
-            We only read public profile stats and insights you authorise. We never post on your behalf.
-          </p>
+          <p className="px-1 text-xs text-muted-foreground">We only read public profile stats and the insights you authorise. We never post on your behalf.</p>
         </aside>
       </div>
     </div>

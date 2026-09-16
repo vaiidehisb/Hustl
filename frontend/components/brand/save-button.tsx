@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { toggleSaveCreatorAction } from "@/app/actions/brand"
 import { cn } from "@/lib/utils"
 
+/** PUT/DELETE /brands/me/saved-creators/:creatorId, optimistic with rollback. */
 export function SaveCreatorButton({ creatorId, saved: initial, name }: { creatorId: string; saved: boolean; name: string }) {
   const [saved, setSaved] = useState(initial)
   const [pending, start] = useTransition()
@@ -24,11 +25,14 @@ export function SaveCreatorButton({ creatorId, saved: initial, name }: { creator
         const next = !saved
         setSaved(next)
         start(async () => {
-          const res = await toggleSaveCreatorAction(creatorId)
+          const res = await toggleSaveCreatorAction(creatorId, next)
           if (!res.ok) {
             setSaved(!next)
-            toast.error(res.error)
-          } else toast.success(next ? `Saved ${name}` : `Removed ${name} from saved`)
+            toast.error(res.error.message)
+          } else {
+            setSaved(res.data.saved)
+            toast.success(res.data.saved ? `Saved ${name}` : `Removed ${name} from saved`)
+          }
         })
       }}
     >

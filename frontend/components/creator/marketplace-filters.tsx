@@ -6,7 +6,7 @@ import { Loader2, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { NICHES, nicheLabel, platformLabel } from "./lib"
+import { NICHES, SOCIAL_PLATFORMS, nicheLabel, platformLabel } from "./lib"
 
 const BUDGETS = [
   { value: "5000", label: "₹5K+" },
@@ -15,8 +15,6 @@ const BUDGETS = [
   { value: "50000", label: "₹50K+" },
   { value: "100000", label: "₹1L+" },
 ]
-
-const FILTER_PLATFORMS = ["instagram", "youtube", "linkedin", "tiktok", "x"]
 
 export type MarketplaceQuery = { q: string; niche: string; platform: string; min: string; sort: string }
 
@@ -34,7 +32,7 @@ export function MarketplaceFilters({ initial }: { initial: MarketplaceQuery }) {
     if (next.niche) params.set("niche", next.niche)
     if (next.platform) params.set("platform", next.platform)
     if (next.min) params.set("min", next.min)
-    if (next.sort && next.sort !== "match") params.set("sort", next.sort)
+    if (next.sort && next.sort !== "newest") params.set("sort", next.sort)
     const qs = params.toString()
     startTransition(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }))
   }
@@ -66,13 +64,7 @@ export function MarketplaceFilters({ initial }: { initial: MarketplaceQuery }) {
         ) : (
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         )}
-        <Input
-          value={query.q}
-          onChange={(e) => set("q", e.target.value)}
-          placeholder="Search briefs, brands, products…"
-          className="pl-9"
-          aria-label="Search briefs"
-        />
+        <Input value={query.q} onChange={(e) => set("q", e.target.value)} placeholder="Search briefs, brands, products…" className="pl-9" aria-label="Search briefs" />
       </div>
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         <Select value={query.niche || "all"} onValueChange={(v) => set("niche", v)}>
@@ -94,7 +86,7 @@ export function MarketplaceFilters({ initial }: { initial: MarketplaceQuery }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All platforms</SelectItem>
-            {FILTER_PLATFORMS.map((p) => (
+            {SOCIAL_PLATFORMS.map((p) => (
               <SelectItem key={p} value={p}>
                 {platformLabel(p)}
               </SelectItem>
@@ -114,14 +106,13 @@ export function MarketplaceFilters({ initial }: { initial: MarketplaceQuery }) {
             ))}
           </SelectContent>
         </Select>
-        <Select value={query.sort || "match"} onValueChange={(v) => set("sort", v)}>
-          <SelectTrigger className="w-full sm:w-[150px]" aria-label="Sort">
+        <Select value={query.sort || "newest"} onValueChange={(v) => set("sort", v)}>
+          <SelectTrigger className="w-full sm:w-[170px]" aria-label="Sort">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="match">Best match</SelectItem>
-            <SelectItem value="newest">Newest</SelectItem>
-            <SelectItem value="budget">Highest budget</SelectItem>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="fit">Best fit on this page</SelectItem>
           </SelectContent>
         </Select>
         {active && (

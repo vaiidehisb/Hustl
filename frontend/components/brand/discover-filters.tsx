@@ -87,15 +87,16 @@ export function DiscoverToolbar({ params, briefs }: { params: DiscoverParams; br
               </div>
             </SheetContent>
           </Sheet>
-          <Select value={params.sort ?? "match"} onValueChange={(v) => set({ sort: v === "match" ? undefined : v })}>
+          <Select value={params.sort ?? "relevance"} onValueChange={(v) => set({ sort: v === "relevance" ? undefined : v })}>
             <SelectTrigger className="h-10 w-full sm:w-[170px]" aria-label="Sort">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="match">Best match</SelectItem>
+              <SelectItem value="relevance">Best match</SelectItem>
               <SelectItem value="followers">Most followers</SelectItem>
               <SelectItem value="engagement">Highest engagement</SelectItem>
               <SelectItem value="trust">Most trusted</SelectItem>
+              <SelectItem value="newest">Newest</SelectItem>
             </SelectContent>
           </Select>
         </div>

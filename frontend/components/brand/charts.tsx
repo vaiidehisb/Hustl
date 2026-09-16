@@ -3,7 +3,8 @@
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { compact, inr } from "@/lib/format"
 
-export type SpendPoint = { month: string; escrow: number; fees: number }
+/** One month of brand spend as the analytics service reports it (escrow + fees). */
+export type SpendPoint = { month: string; amount: number }
 
 function MoneyTooltip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) {
   if (!active || !payload?.length) return null
@@ -31,7 +32,7 @@ function MoneyTooltip({ active, payload, label }: { active?: boolean; payload?: 
 }
 
 export function SpendChart({ data, height = 240 }: { data: SpendPoint[]; height?: number }) {
-  const empty = data.every((d) => d.escrow + d.fees === 0)
+  const empty = data.every((d) => d.amount === 0)
   return (
     <div className="relative" style={{ height }}>
       {empty && (
@@ -49,8 +50,7 @@ export function SpendChart({ data, height = 240 }: { data: SpendPoint[]; height?
             tickFormatter={(v: number) => (v ? `₹${compact(v)}` : "0")}
           />
           <Tooltip cursor={{ fill: "var(--muted)", opacity: 0.5 }} content={<MoneyTooltip />} />
-          <Bar dataKey="escrow" name="Creator payments" stackId="a" fill="var(--primary)" radius={[0, 0, 0, 0]} maxBarSize={36} />
-          <Bar dataKey="fees" name="Fees" stackId="a" fill="var(--chart-2, var(--muted-foreground))" radius={[4, 4, 0, 0]} maxBarSize={36} />
+          <Bar dataKey="amount" name="Spend" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={36} />
         </BarChart>
       </ResponsiveContainer>
     </div>

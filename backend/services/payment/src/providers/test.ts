@@ -4,8 +4,8 @@
 
 import { randomBytes } from "node:crypto"
 import { errors } from "@hustl/common"
-import type { CheckoutDetails } from "@hustl/contracts"
-import type { NormalizedWebhookEvent, PaymentProviderAdapter } from "./types"
+import type { CheckoutDetails, SubscriptionCheckoutDetails } from "@hustl/contracts"
+import type { NormalizedWebhookEvent, PaymentProviderAdapter, SubscriptionIntentInput } from "./types"
 
 const ref = (kind: string) => `test_${kind}_${randomBytes(9).toString("hex")}`
 
@@ -42,6 +42,48 @@ export class TestAdapter implements PaymentProviderAdapter {
       amountMinor: intent.totalAmount * 100,
     }
   }
+
+  // ─── Subscriptions ─────────────────────────────────────────────────────────
+
+  subscriptionCheckoutFor(sub: { id: string; checkoutRef: string | null }): SubscriptionCheckoutDetails {
+    return {
+      provider: "TEST",
+      subscriptionId: sub.id,
+      clientSecret: sub.checkoutRef ?? `test_subsecret_${sub.id}`,
+      confirmPath: `/payments/billing/subscriptions/${sub.id}/confirm-test`,
+    }
+  }
+
+  async createSubscription(input: SubscriptionIntentInput) {
+    const providerSubscriptionId = ref("sub")
+    const checkoutRef = `${providerSubscriptionId}_secret_${randomBytes(6).toString("hex")}`
+    return {
+      providerSubscriptionId,
+      checkoutRef,
+      checkout: this.subscriptionCheckoutFor({ id: input.subscriptionId, checkoutRef }),
+    }
+  }
+
+  /** Simulated provider "period paid" event (used by confirm-test). */
+  subscriptionPaidEvent(sub: { id: string; providerSubscriptionId: string; priceAmount: number; periodStart: Date; periodEnd: Date; sequence: number }): NormalizedWebhookEvent {
+    return {
+      kind: "subscription.paid",
+      eventId: `test_subevt_${sub.id}_${sub.sequence}`,
+      type: "test.subscription_paid",
+      providerSubscriptionId: sub.providerSubscriptionId,
+      periodStart: sub.periodStart,
+      periodEnd: sub.periodEnd,
+      invoice: {
+        providerInvoiceId: `test_inv_${sub.id.replace(/-/g, "").slice(0, 12)}_${sub.sequence}`,
+        amountMinor: sub.priceAmount * 100,
+        periodStart: sub.periodStart,
+        periodEnd: sub.periodEnd,
+      },
+    }
+  }
+
+  /** The sandbox cancels locally; nothing to tell a provider. */
+  async cancelSubscription() {}
 
   async createPayoutAccountLink(input: Parameters<PaymentProviderAdapter["createPayoutAccountLink"]>[0]) {
     return { accountId: input.existingAccountId ?? ref("acct"), url: `${input.returnUrl}${input.returnUrl.includes("?") ? "&" : "?"}test_onboarding=complete`, status: "ACTIVE" as const, detailsSubmitted: true }

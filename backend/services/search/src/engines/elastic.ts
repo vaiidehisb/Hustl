@@ -5,7 +5,18 @@ import { Client, errors as esErrors } from "@elastic/elasticsearch"
 import type { estypes } from "@elastic/elasticsearch"
 import { prisma } from "@hustl/db"
 import type { BriefSearchResult, CreatorSearchResult, SearchBriefsQuery, SearchCreatorsQuery } from "@hustl/contracts"
-import { briefInclude, briefResult, creatorInclude, creatorResult, loadBriefDoc, loadCreatorDoc, searchableBriefWhere, searchableCreatorWhere } from "../documents"
+import {
+  briefInclude,
+  briefResult,
+  creatorDocument,
+  creatorDocumentResult,
+  creatorInclude,
+  loadBriefDoc,
+  loadCreatorDoc,
+  searchableBriefWhere,
+  searchableCreatorWhere,
+  type CreatorDocument,
+} from "../documents"
 import type { SearchEngine } from "./types"
 
 export const creatorMappings: estypes.MappingTypeMapping = {
@@ -26,6 +37,9 @@ export const creatorMappings: estypes.MappingTypeMapping = {
     reliabilityScore: { type: "integer" },
     authenticityScore: { type: "integer" },
     verified: { type: "boolean" },
+    badgeTier: { type: "keyword" },
+    /// 2 = priority badge, 1 = standard badge, 0 = none. Paid placement, relevance sort only.
+    badgeRank: { type: "integer" },
     available: { type: "boolean" },
     completedDeals: { type: "integer" },
     avgRating: { type: "float" },
@@ -76,8 +90,11 @@ export function buildCreatorQuery(q: SearchCreatorsQuery): estypes.SearchRequest
     ? [{ multi_match: { query: q.q, fields: ["handle^4", "name^3", "headline^2", "bio"], type: "best_fields", fuzziness: "AUTO" } }]
     : [{ match_all: {} }]
 
+  // Paid placement: badged creators lead the default relevance ranking. Explicit
+  // sorts (followers, engagement, trust, newest) are never reordered by it, and a
+  // badge never bypasses a filter above — it only moves a creator within the hits.
   const sorts: Record<SearchCreatorsQuery["sort"], estypes.SortCombinations[]> = {
-    relevance: ["_score", { trustScore: { order: "desc", missing: "_last" } }, { followers: "desc" }],
+    relevance: [{ badgeRank: { order: "desc", missing: "_last" } }, "_score", { trustScore: { order: "desc", missing: "_last" } }, { followers: "desc" }],
     followers: [{ followers: "desc" }, { trustScore: { order: "desc", missing: "_last" } }],
     engagement: [{ engagementRate: { order: "desc", missing: "_last" } }, { followers: "desc" }],
     trust: [{ trustScore: { order: "desc", missing: "_last" } }, { followers: "desc" }],
@@ -161,8 +178,8 @@ export function createElasticEngine(url: string): SearchEngine {
 
     async searchCreators(q) {
       await ensureIndices()
-      const res = await client.search<CreatorSearchResult>({ index: index.creators, ...buildCreatorQuery(q) })
-      return { items: res.hits.hits.map((h) => h._source!), total: total(res.hits.total) }
+      const res = await client.search<CreatorDocument>({ index: index.creators, ...buildCreatorQuery(q) })
+      return { items: res.hits.hits.map((h) => creatorDocumentResult(h._source!)), total: total(res.hits.total) }
     },
 
     async searchBriefs(q) {
@@ -205,7 +222,7 @@ export function createElasticEngine(url: string): SearchEngine {
           ...(cursor && { cursor: { id: cursor }, skip: 1 }),
         })
         if (!rows.length) break
-        await bulk(index.creators, rows.map(creatorResult))
+        await bulk(index.creators, rows.map(creatorDocument))
         seenCreators.push(...rows.map((r) => r.id))
         cursor = rows[rows.length - 1].id
       }

@@ -5,8 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { toast } from "sonner"
-import { Check, Loader2, ShieldCheck } from "lucide-react"
-import { BRAND_FEE_RATES, PROCESSING_FEE_RATE, type KycStatus, type OwnBrandProfile, type UpdateBrandProfileRequest, type VerificationRequestDto } from "@hustl/contracts"
+import { Loader2, ShieldCheck } from "lucide-react"
+import type { KycStatus, OwnBrandProfile, UpdateBrandProfileRequest, VerificationRequestDto } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -227,47 +227,4 @@ export function VerificationRequestForm({ kycStatus, latest, defaults }: { kycSt
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
   return <p className="text-xs font-medium text-destructive">{message}</p>
-}
-
-// ─── Plan ────────────────────────────────────────────────────────────────────
-
-const PLANS = [
-  { id: "STARTER" as const, name: "Starter", blurb: "Pay as you go. No monthly commitment.", perks: ["Unlimited briefs", "AI matching & brief parser", "Escrow protection"] },
-  { id: "GROWTH" as const, name: "Growth", blurb: "For brands running campaigns every month.", perks: ["Everything in Starter", "Lower platform fee", "Priority dispute handling"] },
-  { id: "ENTERPRISE" as const, name: "Enterprise", blurb: "Custom terms, managed onboarding.", perks: ["Everything in Growth", "Dedicated support", "Invoiced billing"] },
-]
-
-export function PlanCards({ plan }: { plan: string }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {PLANS.map((p) => {
-        const current = plan === p.id
-        const rate = BRAND_FEE_RATES[p.id]
-        return (
-          <div key={p.id} className={cn("flex flex-col rounded-lg border p-4", current && "border-primary ring-1 ring-primary")}>
-            <div className="flex items-baseline justify-between">
-              <span className="font-semibold">{p.name}</span>
-              <span className="text-sm">
-                <span className="font-display text-xl font-bold">{Math.round(rate * 100)}%</span> <span className="text-muted-foreground">brand fee</span>
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">{p.blurb}</p>
-            <ul className="mt-3 space-y-1 text-xs">
-              {p.perks.map((x) => (
-                <li key={x} className="flex items-center gap-1.5">
-                  <Check className="size-3 text-success" /> {x}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-4 text-sm">
-              {current ? <span className="font-medium text-primary">Current plan</span> : <span className="text-muted-foreground">Contact sales to switch</span>}
-            </div>
-          </div>
-        )
-      })}
-      <p className="text-xs text-muted-foreground sm:col-span-3">
-        Plus {Math.round(PROCESSING_FEE_RATE * 100)}% payment processing at funding. Fees are snapshotted on each deal, so existing deals keep their rate.
-      </p>
-    </div>
-  )
 }

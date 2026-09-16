@@ -1,6 +1,7 @@
 // search-service contracts (see backend/API.md → search-service).
 import { z } from "zod"
 import { pageQuery, SOCIAL_PLATFORMS, type SocialPlatform } from "./common"
+import type { BadgeTier } from "./payments"
 
 const csv = <T extends z.ZodTypeAny>(item: T) =>
   z.preprocess((v) => {
@@ -65,7 +66,10 @@ export type CreatorSearchResult = {
   trustScore: number | null
   reliabilityScore: number | null
   authenticityScore: number | null
+  /** Identity-verified (KYC). Free and admin-reviewed. */
   verified: boolean
+  /** Active paid placement badge, or null. Paid placement — not identity verification. */
+  badgeTier: BadgeTier | null
   available: boolean
   completedDeals: number
   avgRating: number | null

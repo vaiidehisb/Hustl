@@ -4,6 +4,7 @@ import { fundingBreakdown, type CreateFundingIntentResponse } from "@hustl/contr
 import { prisma, Prisma, type PaymentProvider } from "@hustl/db"
 import { toEscrowSummary, toIntentDTO } from "../lib/dto"
 import { activeProvider, getProvider, TestAdapter, type NormalizedWebhookEvent } from "../providers"
+import { applySubscriptionCancelled, applySubscriptionPaid, applySubscriptionPaymentFailed } from "./billing"
 import { retryHeldPayouts } from "./release"
 
 const log = createLogger("payment-service:funding")
@@ -152,6 +153,19 @@ export async function processProviderEvent(provider: PaymentProvider, event: Nor
         case "transfer.failed": {
           const res = await tx.payout.updateMany({ where: { provider, providerRef: event.providerRef }, data: { status: "FAILED", failureReason: event.reason.slice(0, 500), paidAt: null } })
           outcome = res.count ? "payout_failed" : "unknown_transfer"
+          break
+        }
+        // ─── Subscription billing (same dedupe table and transaction) ───────
+        case "subscription.paid": {
+          outcome = await applySubscriptionPaid(tx, provider, event)
+          break
+        }
+        case "subscription.payment_failed": {
+          outcome = await applySubscriptionPaymentFailed(tx, provider, event)
+          break
+        }
+        case "subscription.cancelled": {
+          outcome = await applySubscriptionCancelled(tx, provider, event)
           break
         }
         case "ignored":

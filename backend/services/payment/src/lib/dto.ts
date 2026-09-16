@@ -1,6 +1,7 @@
-import type { Dispute, EscrowAccount, LedgerEntry, PaymentIntent, Payout, PayoutAccount } from "@hustl/db"
+import type { Dispute, EscrowAccount, LedgerEntry, PaymentIntent, Payout, PayoutAccount, Subscription, SubscriptionInvoice } from "@hustl/db"
 import {
   fundingBreakdown,
+  planProduct,
   type DisputeDTO,
   type EscrowSummary,
   type LedgerEntryDTO,
@@ -8,7 +9,11 @@ import {
   type PaymentMode,
   type PayoutAccountDTO,
   type PayoutDTO,
+  type SubscriptionDTO,
+  type SubscriptionInvoiceDTO,
+  type SubscriptionProductKey,
 } from "@hustl/contracts"
+import { isEntitled } from "../domain/billing"
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
 
@@ -85,6 +90,44 @@ export const toPayoutAccountDTO = (creatorId: string, a: PayoutAccount | null): 
         updatedAt: a.updatedAt.toISOString(),
       }
     : { creatorId, provider: null, providerAccountId: null, status: "NOT_CONNECTED", detailsSubmitted: false, updatedAt: null }
+
+export const toSubscriptionDTO = (s: Subscription): SubscriptionDTO => ({
+  id: s.id,
+  subscriberType: s.subscriberType,
+  brandId: s.brandId,
+  creatorId: s.creatorId,
+  product: s.product as SubscriptionProductKey,
+  productName: planProduct(s.product)?.name ?? s.product,
+  status: s.status,
+  provider: s.provider,
+  providerSubscriptionId: s.providerSubscriptionId,
+  priceAmount: s.priceAmount,
+  currency: s.currency,
+  interval: s.interval,
+  currentPeriodStart: s.currentPeriodStart.toISOString(),
+  currentPeriodEnd: s.currentPeriodEnd.toISOString(),
+  cancelAtPeriodEnd: s.cancelAtPeriodEnd,
+  cancelledAt: iso(s.cancelledAt),
+  entitled: isEntitled(s),
+  note: s.note,
+  createdAt: s.createdAt.toISOString(),
+  updatedAt: s.updatedAt.toISOString(),
+})
+
+export const toSubscriptionInvoiceDTO = (i: SubscriptionInvoice): SubscriptionInvoiceDTO => ({
+  id: i.id,
+  subscriptionId: i.subscriptionId,
+  amount: i.amount,
+  currency: i.currency,
+  status: i.status,
+  provider: i.provider,
+  providerInvoiceId: i.providerInvoiceId,
+  periodStart: i.periodStart.toISOString(),
+  periodEnd: i.periodEnd.toISOString(),
+  paidAt: iso(i.paidAt),
+  failureReason: i.failureReason,
+  createdAt: i.createdAt.toISOString(),
+})
 
 export function toEscrowSummary(
   deal: { id: string; amount: number; brandFeeRate: number; processingFeeRate: number; paymentMode: PaymentMode },

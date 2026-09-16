@@ -3,11 +3,14 @@ import { prisma } from "@hustl/db"
 import { z } from "zod"
 import { buildApp, SERVICE_NAME } from "./app"
 import { assertProviderAllowed, providerNameFromEnv } from "./providers"
+import { startExpirySweep } from "./services/billing"
 
 const config = loadConfig({
   PORT: z.coerce.number().optional(),
   PAYMENTS_PROVIDER: z.string().regex(/^(stripe|razorpay|test)$/i, "PAYMENTS_PROVIDER must be stripe, razorpay or test"),
   PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  /** How often the subscription expiry sweep runs. */
+  SUBSCRIPTION_SWEEP_INTERVAL_MS: z.coerce.number().int().min(10_000).default(15 * 60_000),
 })
 
 async function main() {
@@ -28,8 +31,11 @@ async function main() {
 
   const app = await buildApp()
   const stopRelay = startOutboxRelay(SERVICE_NAME)
+  // Subscriptions whose paid period ran out without a renewal are expired here.
+  const stopSweep = startExpirySweep(config.SUBSCRIPTION_SWEEP_INTERVAL_MS)
 
   const shutdown = async () => {
+    stopSweep()
     stopRelay()
     await app.close()
     await prisma.$disconnect()

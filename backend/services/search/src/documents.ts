@@ -2,7 +2,7 @@
 // Documents are stored in Elasticsearch in exactly the API result shape.
 
 import { prisma, type Prisma } from "@hustl/db"
-import type { BriefSearchResult, CreatorSearchResult, SocialPlatform } from "@hustl/contracts"
+import type { BadgeTier, BriefSearchResult, CreatorSearchResult, SocialPlatform } from "@hustl/contracts"
 
 export const creatorInclude = {
   user: { select: { name: true, status: true, deletedAt: true } },
@@ -14,6 +14,16 @@ export type CreatorRow = Prisma.CreatorProfileGetPayload<{ include: typeof creat
 
 /** Soft-deleted profiles/users and suspended users are never searchable. */
 export const searchableCreatorWhere: Prisma.CreatorProfileWhereInput = { deletedAt: null, user: { deletedAt: null, status: "ACTIVE" } }
+
+/**
+ * The paid placement badge, only while it is in date. Paid placement — it is
+ * deliberately separate from `verified` (free, admin-reviewed KYC).
+ */
+export const activeBadgeTier = (c: { badgeTier: BadgeTier | null; badgeUntil: Date | null }, now = new Date()): BadgeTier | null =>
+  c.badgeTier && c.badgeUntil && c.badgeUntil.getTime() > now.getTime() ? c.badgeTier : null
+
+/** Explainable ranking group: 2 = priority badge, 1 = standard badge, 0 = no paid badge. */
+export const badgeRank = (tier: BadgeTier | null) => (tier === "PRIORITY" ? 2 : tier === "STANDARD" ? 1 : 0)
 
 export function creatorResult(c: CreatorRow): CreatorSearchResult {
   return {
@@ -32,6 +42,7 @@ export function creatorResult(c: CreatorRow): CreatorSearchResult {
     reliabilityScore: c.score?.reliabilityScore ?? null,
     authenticityScore: c.score?.authenticityScore ?? null,
     verified: c.verifiedAt !== null,
+    badgeTier: activeBadgeTier(c),
     available: c.available,
     completedDeals: c.completedDeals,
     avgRating: c.avgRating,
@@ -41,9 +52,23 @@ export function creatorResult(c: CreatorRow): CreatorSearchResult {
 
 export const isSearchableCreator = (c: CreatorRow) => !c.deletedAt && !c.user.deletedAt && c.user.status === "ACTIVE"
 
-export async function loadCreatorDoc(creatorId: string): Promise<CreatorSearchResult | null> {
+/**
+ * The Elasticsearch document: the API result plus `badgeRank`, the numeric
+ * placement group Elasticsearch sorts on (a keyword field would sort
+ * alphabetically). Stripped again before the result leaves the service.
+ */
+export type CreatorDocument = CreatorSearchResult & { badgeRank: number }
+
+export const creatorDocument = (c: CreatorRow): CreatorDocument => {
+  const doc = creatorResult(c)
+  return { ...doc, badgeRank: badgeRank(doc.badgeTier) }
+}
+
+export const creatorDocumentResult = ({ badgeRank: _rank, ...doc }: CreatorDocument): CreatorSearchResult => doc
+
+export async function loadCreatorDoc(creatorId: string): Promise<CreatorDocument | null> {
   const c = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, include: creatorInclude })
-  return c && isSearchableCreator(c) ? creatorResult(c) : null
+  return c && isSearchableCreator(c) ? creatorDocument(c) : null
 }
 
 export const briefInclude = {

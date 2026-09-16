@@ -14,6 +14,7 @@ export const {
   deals,
   offers,
   payments,
+  billing,
   messages,
   notifications,
   search,

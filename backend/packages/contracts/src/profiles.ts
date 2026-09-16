@@ -1,6 +1,7 @@
 // Profile, verification and admin-user contracts — served by user-service (see backend/API.md).
 import { z } from "zod"
 import { handle, inrAmount, NICHES, pageQuery, ROLES, type Role, type SocialPlatform } from "./common"
+import type { BadgeTier } from "./payments"
 import { brandCompanyName, type KycStatus, type PublicUser, type UserStatus } from "./auth"
 
 const httpUrl = z
@@ -138,7 +139,11 @@ export type OwnCreatorProfile = {
   rateCard: RateCardItem[]
   portfolio: PortfolioItem[]
   available: boolean
+  /** Free, admin-reviewed identity verification (KYC). */
   verifiedAt: string | null
+  /** Paid placement badge bought through billing — never implies identity verification. */
+  badgeTier: BadgeTier | null
+  badgeUntil: string | null
   followersTotal: number
   engagementRate: number | null
   followerGrowth30d: number | null
@@ -225,7 +230,11 @@ export type CreatorPublicProfile = {
   rateCard: RateCardItem[]
   portfolio: PortfolioItem[]
   available: boolean
+  /** Identity-verified (KYC, free, admin-reviewed). */
   verified: boolean
+  /** Paid Verified Creator badge, only while it is in date. Distinct from `verified`. */
+  badgeTier: BadgeTier | null
+  badgeUntil: string | null
   followersTotal: number
   engagementRate: number | null
   followerGrowth30d: number | null

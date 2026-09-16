@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify"
 import { authenticate, ok, parse, requireInternal, requireRole } from "@hustl/common"
 import {
   adminDisputesQuery,
+  adminGrantSubscriptionRequest,
+  adminSubscriptionsQuery,
   dealIdParams,
   idParams,
   internalCreateDisputeRequest,
@@ -10,7 +12,17 @@ import {
   onboardingLinkRequest,
   payoutsQuery,
   resolveDisputeRequest,
+  subscribeRequest,
 } from "@hustl/contracts"
+import {
+  adminGrantSubscription,
+  adminListSubscriptions,
+  cancelSubscription,
+  confirmTestSubscription,
+  listProducts,
+  mySubscriptions,
+  subscribe,
+} from "./services/billing"
 import { createDispute, freezeEscrow, listDisputes, resolveDispute } from "./services/disputes"
 import { confirmTestIntent, createFundingIntent, handleWebhook } from "./services/funding"
 import { brandLedger, createOnboardingLink, creatorPayouts, dealPayments, getPayoutAccount, paymentSummary } from "./services/queries"
@@ -58,7 +70,35 @@ export async function registerRoutes(app: FastifyInstance) {
     ok(await createOnboardingLink(user(req), parse(onboardingLinkRequest, req.body ?? {}))),
   )
 
+  // ─── Subscription billing ─────────────────────────────────────────────────
+  app.get("/payments/billing/products", { preHandler: authenticate }, async (req) => ok(await listProducts(user(req))))
+
+  app.get("/payments/billing/subscription", { preHandler: requireRole("BRAND", "CREATOR") }, async (req) => ok(await mySubscriptions(user(req))))
+
+  app.post("/payments/billing/subscribe", { preHandler: requireRole("BRAND", "CREATOR") }, async (req) =>
+    ok(await subscribe(user(req), parse(subscribeRequest, req.body))),
+  )
+
+  app.post("/payments/billing/subscriptions/:id/cancel", { preHandler: authenticate }, async (req) => {
+    const { id } = parse(idParams, req.params)
+    return ok(await cancelSubscription(user(req), id))
+  })
+
+  app.post("/payments/billing/subscriptions/:id/confirm-test", { preHandler: authenticate }, async (req) => {
+    const { id } = parse(idParams, req.params)
+    return ok(await confirmTestSubscription(user(req), id))
+  })
+
   // ─── Admin ────────────────────────────────────────────────────────────────
+  app.post("/admin/billing/subscriptions", { preHandler: requireRole("ADMIN") }, async (req, reply) =>
+    reply.status(201).send(ok(await adminGrantSubscription(user(req), parse(adminGrantSubscriptionRequest, req.body)))),
+  )
+
+  app.get("/admin/billing/subscriptions", { preHandler: requireRole("ADMIN") }, async (req) => {
+    const { items, meta } = await adminListSubscriptions(parse(adminSubscriptionsQuery, req.query))
+    return ok(items, meta)
+  })
+
   app.get("/admin/disputes", { preHandler: requireRole("ADMIN") }, async (req) => {
     const { items, meta } = await listDisputes(parse(adminDisputesQuery, req.query))
     return ok(items, meta)

@@ -3,6 +3,8 @@ import "server-only"
 // Types are the real service contracts; nothing here touches the database.
 
 import type {
+  BillingProductsResponse,
+  BillingSubscriptionResponse,
   ApplicationDTO,
   ApplicationStatus,
   BrandPublicProfile,
@@ -105,4 +107,9 @@ export const getPayoutAccount = () => apiFetch<PayoutAccountDTO>("/payments/payo
 export const getCreatorOverview = () => apiFetch<CreatorOverview>("/analytics/creator/overview")
 export const getCreatorMetrics = (creatorId: string) => apiFetch<CreatorMetrics>(`/social/creators/${encodeURIComponent(creatorId)}/metrics`)
 export const getSocialProviders = () => apiFetch<SocialProvidersStatus>("/social/providers")
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
+export const getBillingProducts = () => apiFetch<BillingProductsResponse>("/payments/billing/products")
+export const getBilling = () => apiFetch<BillingSubscriptionResponse>("/payments/billing/subscription")
 export const getSocialAccounts = () => apiFetch<SocialAccountDto[]>("/social/accounts/me")

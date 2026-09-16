@@ -18,6 +18,7 @@ export const ROUTES: [prefix: string, service: Service][] = [
   ["/admin/users", "user"],
   ["/admin/verifications", "user"],
   ["/admin/disputes", "payment"],
+  ["/admin/billing", "payment"],
   ["/admin/fraud-flags", "creator"],
   ["/admin/metrics", "analytics"],
   ["/auth", "user"],

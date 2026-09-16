@@ -35,6 +35,11 @@ export const NOTIFICATION_TOPICS: Topic[] = [
   TOPICS.DISPUTE_RESOLVED,
   TOPICS.MESSAGE_SENT,
   TOPICS.FRAUD_FLAGGED,
+  TOPICS.SUBSCRIPTION_ACTIVATED,
+  TOPICS.SUBSCRIPTION_RENEWED,
+  TOPICS.SUBSCRIPTION_PAYMENT_FAILED,
+  TOPICS.SUBSCRIPTION_CANCELLED,
+  TOPICS.SUBSCRIPTION_EXPIRED,
 ]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -323,6 +328,31 @@ async function draftsFor(event: EventEnvelope, log: Log): Promise<{ drafts: Noti
           subjectName,
         }),
       }
+    }
+
+    case TOPICS.SUBSCRIPTION_ACTIVATED:
+    case TOPICS.SUBSCRIPTION_RENEWED:
+    case TOPICS.SUBSCRIPTION_PAYMENT_FAILED:
+    case TOPICS.SUBSCRIPTION_CANCELLED:
+    case TOPICS.SUBSCRIPTION_EXPIRED: {
+      // payment-service puts everything the copy needs on the event, so this is a
+      // pure payload read — no subscription lookup from the notification service.
+      const party = asParty(p.subscriberType)
+      const userId = id(p, null, "userId")
+      if (!party || !userId) return skip("Subscription subscriber")
+      const facts = {
+        party,
+        productName: str(p, "productName", "product") ?? "Your plan",
+        amount: num(p, "amount", "invoiceAmount", "priceAmount"),
+        periodEnd: str(p, "currentPeriodEnd"),
+        interval: (str(p, "interval") === "YEAR" ? "YEAR" : str(p, "interval") === "MONTH" ? "MONTH" : null) as "MONTH" | "YEAR" | null,
+      }
+      const audiences = { [party]: [userId] }
+      if (event.topic === TOPICS.SUBSCRIPTION_ACTIVATED) return { audiences, drafts: t.subscriptionActivated(facts) }
+      if (event.topic === TOPICS.SUBSCRIPTION_RENEWED) return { audiences, drafts: t.subscriptionRenewed(facts) }
+      if (event.topic === TOPICS.SUBSCRIPTION_PAYMENT_FAILED) return { audiences, drafts: t.subscriptionPaymentFailed({ ...facts, reason: str(p, "reason") }) }
+      if (event.topic === TOPICS.SUBSCRIPTION_CANCELLED) return { audiences, drafts: t.subscriptionCancelled(facts) }
+      return { audiences, drafts: t.subscriptionExpired(facts) }
     }
 
     case TOPICS.USER_KYC_VERIFIED: {

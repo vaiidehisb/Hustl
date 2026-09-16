@@ -5,6 +5,7 @@ import { adminApi } from "./admin"
 import { analyticsApi } from "./analytics"
 import { applicationsApi } from "./applications"
 import { authApi } from "./auth"
+import { billingApi } from "./billing"
 import { brandsApi } from "./brands"
 import { briefsApi } from "./briefs"
 import { creatorsApi } from "./creators"
@@ -29,6 +30,7 @@ export function createApi(r: Requester) {
     deals: dealsApi(r),
     offers: offersApi(r),
     payments: paymentsApi(r),
+    billing: billingApi(r),
     messages: messagesApi(r),
     notifications: notificationsApi(r),
     search: searchApi(r),

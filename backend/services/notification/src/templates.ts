@@ -241,3 +241,91 @@ export function kycVerified(f: { role: "brand" | "creator" | null }): Notificati
     },
   ]
 }
+
+// ─── Subscription billing ────────────────────────────────────────────────────
+
+/** Billing notifications always go to the subscriber, never to admins. */
+type Party = Exclude<Audience, "admin">
+
+export type SubscriptionFacts = {
+  party: Party
+  productName: string
+  amount: number | null
+  periodEnd: string | null
+  interval: "MONTH" | "YEAR" | null
+}
+
+const billingHref = (party: Party) => `/${party}/settings/billing`
+const onDate = (iso: string | null) => {
+  const d = iso ? new Date(iso) : null
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null
+}
+const per = (interval: SubscriptionFacts["interval"]) => (interval === "YEAR" ? "year" : "month")
+
+export function subscriptionActivated(f: SubscriptionFacts): NotificationDraft[] {
+  const price = f.amount ? ` ${inr(f.amount)}/${per(f.interval)} —` : ""
+  const renews = onDate(f.periodEnd)
+  return [
+    {
+      audience: f.party,
+      title: `${f.productName} is active`,
+      body: `${f.productName} is now active on your account.${price}${renews ? ` Next renewal ${renews}.` : ""}`,
+      href: billingHref(f.party),
+      email: true,
+    },
+  ]
+}
+
+export function subscriptionRenewed(f: SubscriptionFacts): NotificationDraft[] {
+  const amount = f.amount ? `${inr(f.amount)} ` : ""
+  const until = onDate(f.periodEnd)
+  return [
+    {
+      audience: f.party,
+      title: `${f.productName} renewed`,
+      body: `We renewed ${f.productName}${amount ? ` for ${amount}` : ""}.${until ? ` You're covered until ${until}.` : ""}`,
+      href: billingHref(f.party),
+    },
+  ]
+}
+
+export function subscriptionPaymentFailed(f: SubscriptionFacts & { reason: string | null }): NotificationDraft[] {
+  const until = onDate(f.periodEnd)
+  const why = f.reason ? ` (${clip(f.reason, 80)})` : ""
+  return [
+    {
+      audience: f.party,
+      title: `Payment failed for ${f.productName}`,
+      body: `We couldn't take the ${f.amount ? inr(f.amount) : "payment"} for ${f.productName}${why}. Update your payment method to keep it${until ? ` — access ends ${until}` : ""}.`,
+      href: billingHref(f.party),
+      email: true,
+    },
+  ]
+}
+
+export function subscriptionCancelled(f: SubscriptionFacts): NotificationDraft[] {
+  const until = onDate(f.periodEnd)
+  return [
+    {
+      audience: f.party,
+      title: `${f.productName} cancelled`,
+      body: `${f.productName} won't renew.${until ? ` You keep it until ${until}.` : ""}`,
+      href: billingHref(f.party),
+      email: true,
+    },
+  ]
+}
+
+export function subscriptionExpired(f: SubscriptionFacts): NotificationDraft[] {
+  return [
+    {
+      audience: f.party,
+      title: `${f.productName} ended`,
+      body:
+        f.party === "brand"
+          ? `${f.productName} has ended. New offers go back to the 8% starter platform fee — deals you already sent keep the rate they were created with.`
+          : `${f.productName} has ended, so the badge is off your profile. You can renew any time.`,
+      href: billingHref(f.party),
+    },
+  ]
+}

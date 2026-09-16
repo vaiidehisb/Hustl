@@ -3,14 +3,21 @@ import { BadgeCheck, ExternalLink, ShieldAlert } from "lucide-react"
 import { UPFRONT_MIN_RELIABILITY } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { PageHeader, Panel, Pill } from "@/components/app/ui"
-import { BrandProfileForm, PlanCards, VerificationRequestForm } from "@/components/brand/settings-forms"
+import { BrandProfileForm, VerificationRequestForm } from "@/components/brand/settings-forms"
+import { PlanPanel } from "@/components/billing/plan-panel"
 import { ErrorPanel } from "@/components/brand/error-panel"
-import { loadBrandProfile, loadMe, loadVerifications } from "@/components/brand/data"
+import { loadBrandProfile, loadBilling, loadBillingProducts, loadMe, loadVerifications } from "@/components/brand/data"
 
 export const metadata = { title: "Settings" }
 
 export default async function BrandSettingsPage() {
-  const [profileRes, meRes, verificationsRes] = await Promise.all([loadBrandProfile(), loadMe(), loadVerifications()])
+  const [profileRes, meRes, verificationsRes, productsRes, billingRes] = await Promise.all([
+    loadBrandProfile(),
+    loadMe(),
+    loadVerifications(),
+    loadBillingProducts(),
+    loadBilling(),
+  ])
 
   if (!profileRes.ok) {
     return (
@@ -123,8 +130,8 @@ export default async function BrandSettingsPage() {
           </Panel>
         </div>
 
-        <Panel title="Plan" description="Your plan sets the platform fee added when you fund escrow. Creators never see it." className="lg:col-span-3">
-          <PlanCards plan={brand.plan} />
+        <Panel title="Plan & billing" description="Your plan sets the platform fee added when you fund escrow. Creators never see it." className="lg:col-span-3">
+          <PlanPanel plan={brand.plan} products={productsRes?.products ?? []} billing={billingRes} />
         </Panel>
       </div>
     </div>

@@ -36,6 +36,21 @@ export function briefWhere(q: SearchBriefsQuery): Prisma.BriefWhereInput {
 
 type CreatorOrder = Prisma.CreatorProfileOrderByWithRelationInput[]
 
+/**
+ * Paid placement groups, highest first: priority badge, standard badge, no badge.
+ * Only creators whose badge is still in date count — `badgeUntil` in the past is
+ * the same as no badge. This is placement only: the filters in `creatorWhere`
+ * still decide who is in the result set at all.
+ */
+export function badgeGroups(now = new Date()): Prisma.CreatorProfileWhereInput[] {
+  const inDate = { badgeUntil: { gt: now } }
+  return [
+    { badgeTier: "PRIORITY", ...inDate },
+    { badgeTier: "STANDARD", ...inDate },
+    { OR: [{ badgeTier: null }, { badgeUntil: null }, { badgeUntil: { lte: now } }] },
+  ]
+}
+
 export const postgresEngine: SearchEngine = {
   name: "postgres",
 
@@ -45,17 +60,39 @@ export const postgresEngine: SearchEngine = {
     const find = (w: Prisma.CreatorProfileWhereInput, orderBy: CreatorOrder, s: number, take: number) =>
       take > 0 ? prisma.creatorProfile.findMany({ where: w, include: creatorInclude, orderBy: [...orderBy, { id: "asc" }], skip: s, take }) : Promise.resolve([])
 
+    /** Pages across ordered groups: group 1 is exhausted before group 2 starts. */
+    const pageGroups = async (groups: { where: Prisma.CreatorProfileWhereInput; orderBy: CreatorOrder }[]) => {
+      const counts = await Promise.all(groups.map((g) => prisma.creatorProfile.count({ where: g.where })))
+      const rows = []
+      let offset = skip
+      let remaining = q.pageSize
+      for (let i = 0; i < groups.length && remaining > 0; i++) {
+        if (offset >= counts[i]) {
+          offset -= counts[i]
+          continue
+        }
+        const batch = await find(groups[i].where, groups[i].orderBy, offset, Math.min(remaining, counts[i] - offset))
+        rows.push(...batch)
+        remaining -= batch.length
+        offset = 0
+      }
+      return { items: rows.map(creatorResult), total: counts.reduce((a, b) => a + b, 0) }
+    }
+
     if (q.sort === "relevance" || q.sort === "trust") {
       // Scored creators first (by trust), then unscored — Postgres puts NULLs first on DESC joins,
       // so the two groups are paged explicitly.
-      const scored = { AND: [where, { score: { isNot: null } }] }
-      const unscored = { AND: [where, { score: { is: null } }] }
-      const [scoredTotal, unscoredTotal] = await Promise.all([prisma.creatorProfile.count({ where: scored }), prisma.creatorProfile.count({ where: unscored })])
       const secondary: CreatorOrder = q.sort === "relevance" ? [{ followersTotal: "desc" }] : [{ engagementRate: { sort: "desc", nulls: "last" } }, { followersTotal: "desc" }]
-      const fromScored = await find(scored, [{ score: { trustScore: "desc" } }, ...secondary], skip, Math.max(0, Math.min(q.pageSize, scoredTotal - skip)))
-      const remaining = q.pageSize - fromScored.length
-      const fromUnscored = await find(unscored, [{ followersTotal: "desc" }], Math.max(0, skip - scoredTotal), remaining)
-      return { items: [...fromScored, ...fromUnscored].map(creatorResult), total: scoredTotal + unscoredTotal }
+      const scoredOrder: CreatorOrder = [{ score: { trustScore: "desc" } }, ...secondary]
+      const unscoredOrder: CreatorOrder = [{ followersTotal: "desc" }]
+      const byScore = (badge: Prisma.CreatorProfileWhereInput) => [
+        { where: { AND: [where, badge, { score: { isNot: null } }] }, orderBy: scoredOrder },
+        { where: { AND: [where, badge, { score: { is: null } }] }, orderBy: unscoredOrder },
+      ]
+      // Paid placement applies to the default relevance ranking only, mirroring the
+      // Elasticsearch engine's badgeRank sort; `trust` stays a pure trust ordering.
+      const groups = q.sort === "relevance" ? badgeGroups().flatMap(byScore) : byScore({})
+      return pageGroups(groups)
     }
 
     const orders: Record<"followers" | "engagement" | "newest", CreatorOrder> = {

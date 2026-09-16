@@ -1,7 +1,7 @@
 import { prisma, type Prisma } from "@hustl/db"
 import { errors, publish, TOPICS, type AuthUser } from "@hustl/common"
 import type { CreatorPublicProfile, OwnCreatorProfile, PortfolioItem, RateCardItem, UpdateCreatorProfileRequest } from "@hustl/contracts"
-import { toOwnCreatorProfile } from "../lib/mappers"
+import { activeBadge, toOwnCreatorProfile } from "../lib/mappers"
 import { isUniqueViolation } from "../lib/prisma-errors"
 import { reviewsReceivedBy } from "../repositories/reviews.repository"
 import { activeUserFilter, isHandleTaken, loadActiveUser } from "../repositories/users.repository"
@@ -93,6 +93,8 @@ export async function getPublicCreatorProfile(handle: string, viewer?: AuthUser)
     portfolio: Array.isArray(c.portfolio) ? (c.portfolio as PortfolioItem[]) : [],
     available: c.available,
     verified: !!c.verifiedAt,
+    badgeTier: activeBadge(c),
+    badgeUntil: c.badgeUntil ? c.badgeUntil.toISOString() : null,
     followersTotal: c.followersTotal,
     engagementRate: c.engagementRate,
     followerGrowth30d: c.followerGrowth30d,

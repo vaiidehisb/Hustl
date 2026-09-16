@@ -177,6 +177,55 @@ enum DisputeResolution {
   SPLIT
 }
 
+// ─── Subscription billing (payment-service) ──────────────────────────────────
+
+enum SubscriberType {
+  BRAND
+  CREATOR
+}
+
+/// Self-serve: BRAND_GROWTH, CREATOR_BADGE_*. BRAND_ENTERPRISE is admin-granted only.
+enum SubscriptionProduct {
+  BRAND_GROWTH
+  BRAND_ENTERPRISE
+  CREATOR_BADGE_STANDARD
+  CREATOR_BADGE_PRIORITY
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum SubscriptionInterval {
+  MONTH
+  YEAR
+}
+
+/// MANUAL = admin grant (Enterprise, comps); no money moves through a provider.
+enum SubscriptionProvider {
+  STRIPE
+  RAZORPAY
+  TEST
+  MANUAL
+}
+
+enum SubscriptionInvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+/// Paid placement badge bought by a creator. Distinct from CreatorProfile.verifiedAt (free, admin-reviewed KYC).
+enum CreatorBadgeTier {
+  STANDARD
+  PRIORITY
+}
+
 enum FraudSubject {
   CREATOR
   DEAL
@@ -256,6 +305,7 @@ model User {
   verificationsReviewed VerificationRequest[] @relation("VerificationReviewer")
   fraudReviews          FraudFlag[]
   offersProposed        DealOffer[]
+  subscriptionsGranted  Subscription[]        @relation("SubscriptionGrantedBy")
 
   @@map("users")
 }
@@ -294,7 +344,11 @@ model CreatorProfile {
   rateCard          Json      @default("[]") @map("rate_card") /// { deliverable: string, price: number }[]
   portfolio         Json      @default("[]") /// { title: string, url: string, brand?: string, mediaId?: string }[]
   available         Boolean   @default(true)
+  /// Free, admin-reviewed identity/KYC verification. Never set by billing.
   verifiedAt        DateTime? @map("verified_at")
+  /// Paid placement badge (see Subscription). Applied by user-service from subscription events.
+  badgeTier         CreatorBadgeTier? @map("badge_tier")
+  badgeUntil        DateTime?         @map("badge_until")
   // Aggregates normalised from connected social accounts (creator-data-service)
   followersTotal    Int       @default(0) @map("followers_total")
   engagementRate    Float?    @map("engagement_rate") /// follower-weighted, fraction (0.042 = 4.2%)
@@ -318,9 +372,11 @@ model CreatorProfile {
   payoutAccount  PayoutAccount?
   payouts        Payout[]
   fraudFlags     FraudFlag[]
+  subscriptions  Subscription[]
 
   @@index([available])
   @@index([followersTotal])
+  @@index([badgeTier, badgeUntil])
   @@map("creator_profiles")
 }
 
@@ -347,6 +403,7 @@ model BrandProfile {
   briefs Brief[]
   deals  Deal[]
   saved  SavedCreator[]
+  subscriptions Subscription[]
 
   @@map("brand_profiles")
 }
@@ -842,6 +899,71 @@ model Dispute {
   @@index([status])
   @@index([dealId])
   @@map("disputes")
+}
+
+/// owner: payment-service — recurring plans and paid badges.
+/// Exactly one of brandId / creatorId is set (CHECK constraint `subscriptions_subscriber_ck`).
+/// One ACTIVE subscription per subscriber per product (partial unique index
+/// `subscriptions_active_unique`; both in the `billing` migration, since Prisma
+/// cannot express check constraints or partial indexes).
+model Subscription {
+  id                     String               @id @default(uuid()) @db.Uuid
+  subscriberType         SubscriberType       @map("subscriber_type")
+  brandId                String?              @map("brand_id") @db.Uuid
+  brand                  BrandProfile?        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  creatorId              String?              @map("creator_id") @db.Uuid
+  creator                CreatorProfile?      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  product                SubscriptionProduct
+  status                 SubscriptionStatus   @default(PENDING)
+  provider               SubscriptionProvider
+  providerSubscriptionId String?              @map("provider_subscription_id")
+  /// Stripe client secret / Razorpay short url — enough to rebuild checkout.
+  providerCheckoutRef    String?              @map("provider_checkout_ref")
+  /// Whole INR, like every other amount in this schema.
+  priceAmount            Int                  @map("price_amount")
+  currency               String               @default("INR")
+  interval               SubscriptionInterval
+  currentPeriodStart     DateTime             @map("current_period_start")
+  currentPeriodEnd       DateTime             @map("current_period_end")
+  cancelAtPeriodEnd      Boolean              @default(false) @map("cancel_at_period_end")
+  cancelledAt            DateTime?            @map("cancelled_at")
+  /// Admin who granted or overrode this subscription (Enterprise, comps).
+  grantedById            String?              @map("granted_by_id") @db.Uuid
+  grantedBy              User?                @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  note                   String?
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+
+  invoices SubscriptionInvoice[]
+
+  @@unique([provider, providerSubscriptionId])
+  @@index([brandId])
+  @@index([creatorId])
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+/// owner: payment-service — one row per billing period charge.
+model SubscriptionInvoice {
+  id                String                    @id @default(uuid()) @db.Uuid
+  subscriptionId    String                    @map("subscription_id") @db.Uuid
+  subscription      Subscription              @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount            Int
+  currency          String                    @default("INR")
+  status            SubscriptionInvoiceStatus @default(PENDING)
+  provider          SubscriptionProvider
+  providerInvoiceId String?                   @map("provider_invoice_id")
+  periodStart       DateTime                  @map("period_start")
+  periodEnd         DateTime                  @map("period_end")
+  paidAt            DateTime?                 @map("paid_at")
+  failureReason     String?                   @map("failure_reason")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+
+  /// Postgres treats NULLs as distinct, so this is "unique where providerInvoiceId is not null".
+  @@unique([provider, providerInvoiceId])
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_invoices")
 }
 
 // ─── Notification service (messaging + notifications) ────────────────────────

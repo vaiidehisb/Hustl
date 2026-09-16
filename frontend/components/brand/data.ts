@@ -1,13 +1,12 @@
 // Server-side data layer for the brand portal. Every read goes through the API
 // gateway (`@/lib/api`); nothing here touches a database.
-//
-// `lib/api/types.ts` still carries pre-contract placeholder DTOs for a few
-// domains, so the calls below are typed with the real `@hustl/contracts`
-// response types.
+
 
 import "server-only"
 import type {
   ApplicationDTO,
+  BillingProductsResponse,
+  BillingSubscriptionResponse,
   ApplicationStatus,
   BrandOverview,
   BriefDTO,
@@ -122,6 +121,8 @@ export const paymentSummary = () => apiFetch<BrandPaymentSummary>("/payments/me/
 export const dealPayments = (dealId: string) => apiFetch<DealPaymentsResponse>(`/payments/deals/${encodeURIComponent(dealId)}`)
 
 export const myVerifications = () => apiFetch<VerificationRequestDto[]>("/verifications/me")
+export const billingProducts = () => apiFetch<BillingProductsResponse>("/payments/billing/products")
+export const mySubscriptions = () => apiFetch<BillingSubscriptionResponse>("/payments/billing/subscription")
 
 // ─── Loaded (non-throwing) variants used by pages ────────────────────────────
 
@@ -139,6 +140,10 @@ export const loadPaymentSummary = () => load(() => plain(paymentSummary()))
 export const loadBrandProfile = () => load(() => plain(brandProfile()))
 export const loadMe = () => load(() => plain(me()))
 export const loadVerifications = () => load(() => plain(myVerifications()))
+
+/** Billing reads fail soft: a settings page must still render its profile if billing is down. */
+export const loadBillingProducts = (): Promise<BillingProductsResponse | null> => soft(billingProducts)
+export const loadBilling = (): Promise<BillingSubscriptionResponse | null> => soft(mySubscriptions)
 
 // ─── Derived counts for the sidebar badges ───────────────────────────────────
 

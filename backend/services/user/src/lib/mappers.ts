@@ -1,6 +1,7 @@
 // Prisma rows → public DTOs (contracts). Never leaks password hashes, token hashes or audience PII.
 import type { BrandProfile, CreatorProfile, User, VerificationRequest } from "@hustl/db"
 import type {
+  BadgeTier,
   InternalUser,
   OwnBrandProfile,
   OwnCreatorProfile,
@@ -11,6 +12,10 @@ import type {
 } from "@hustl/contracts"
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
+
+/** The paid placement badge, only while it is in date. Never derived from verifiedAt (KYC). */
+export const activeBadge = (c: { badgeTier: BadgeTier | null; badgeUntil: Date | null }): BadgeTier | null =>
+  c.badgeTier && c.badgeUntil && c.badgeUntil.getTime() > Date.now() ? c.badgeTier : null
 const jsonArray = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
 
 export function toPublicUser(u: User): PublicUser {
@@ -45,6 +50,8 @@ export function toOwnCreatorProfile(c: CreatorProfile): OwnCreatorProfile {
     portfolio: jsonArray<PortfolioItem>(c.portfolio),
     available: c.available,
     verifiedAt: iso(c.verifiedAt),
+    badgeTier: activeBadge(c),
+    badgeUntil: iso(c.badgeUntil),
     followersTotal: c.followersTotal,
     engagementRate: c.engagementRate,
     followerGrowth30d: c.followerGrowth30d,

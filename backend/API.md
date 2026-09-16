@@ -22,7 +22,7 @@ All client traffic: **Next.js (server) → API Gateway :4000 → service**. The 
 | gateway | 4000 | — |
 | user | 4001 | /auth /users /creators /brands /verifications /admin/users /admin/verifications |
 | deal | 4002 | /briefs /applications /deals |
-| payment | 4003 | /payments /admin/disputes |
+| payment | 4003 | /payments /admin/disputes /admin/billing |
 | creator-data | 4004 | /social /admin/fraud-flags |
 | search | 4005 | /search |
 | notification | 4006 | /notifications /conversations /socket.io |
@@ -39,6 +39,7 @@ All client traffic: **Next.js (server) → API Gateway :4000 → service**. The 
 - `POST /auth/google` `{ idToken }` → verifies with `GOOGLE_CLIENT_ID`; creates user without role if new.
 - `GET /users/me` → `{ user, creator?, brand?, profileCompletion: { percent, missing[] } }`.
 - `PATCH /users/me` `{ name?, image? }`; `POST /users/me/role` `{ role, companyName? | handle? }` (only when role is null).
+- Consumes `subscription.*` and applies entitlements (see payment-service -> Entitlements). `GET /users/me` and the public profiles expose `plan`, and `badgeTier` / `badgeUntil` alongside (never merged into) `verified`.
 - `GET /creators/:handle` public profile (+ scores, social summary, reviews); `PUT /creators/me` profile update (emits `creator.profile_updated`); `GET /creators/me`.
 - `GET /brands/:slug` public (profile + `liveBriefs` so creators can apply from it); `PUT /brands/me` (emits `brand.profile_updated`); `GET /brands/me`.
 - `GET /brands/me/saved-creators`, `PUT /brands/me/saved-creators/:creatorId`, `DELETE …`.
@@ -63,8 +64,8 @@ State machine (server-enforced, invalid → 409):
 
 ## payment-service (contracts: `payments.ts`)
 
-Provider adapters: `stripe` (PaymentIntents + Connect transfers), `razorpay` (Orders + Route transfers), `test` (explicit sandbox, rejected when `NODE_ENV=production`). Selected by `PAYMENTS_PROVIDER`.
-Fees: brand 8% (STARTER) / 5% (GROWTH, ENTERPRISE) at funding; processing 2% pass-through; creator 5% per payout.
+Provider adapters: `stripe` (PaymentIntents + Connect transfers + Subscriptions), `razorpay` (Orders + Route transfers + Subscriptions), `test` (explicit sandbox, rejected when `NODE_ENV=production`). Selected by `PAYMENTS_PROVIDER`.
+Fees: brand 8% (STARTER) / 5% (GROWTH, ENTERPRISE) at funding; processing 2% pass-through; creator 5% per payout. The rates come from `PLAN_CATALOG` in `contracts/payments.ts` — `BRAND_FEE_RATES` is derived from it, so a plan's price and its discount can't drift apart.
 
 - `POST /payments/deals/:dealId/intent` (brand; deal must be CONTRACT_SIGNED) → `{ intent, checkout: { provider, clientSecret | orderId, publishableKey | keyId } }`. Idempotent per deal.
 - `POST /payments/intents/:id/confirm-test` (test provider only) — simulates the provider webhook through the same code path.
@@ -74,7 +75,45 @@ Fees: brand 8% (STARTER) / 5% (GROWTH, ENTERPRISE) at funding; processing 2% pas
 - `GET /payments/payout-account`, `POST /payments/payout-account/onboarding-link` (Stripe Connect / Razorpay linked account; 503 without creds).
 - Internal: `POST /internal/payments/milestones/:milestoneId/release` (requires milestone APPROVED, escrow not frozen), `POST /internal/payments/deals/:dealId/freeze`, `POST /internal/payments/disputes` (create).
 - Admin: `GET /admin/disputes`, `POST /admin/disputes/:id/resolve` `{ resolution, splitCreatorPercent?, note }` → release/refund, unfreeze, emits `dispute.resolved`.
-- Emits: `payment.funded`, `milestone.payment_released`, `payment.refunded`, `payment.disputed`, `dispute.opened`, `dispute.resolved`.
+- Emits: `payment.funded`, `milestone.payment_released`, `payment.refunded`, `payment.disputed`, `dispute.opened`, `dispute.resolved`, `subscription.activated`, `subscription.renewed`, `subscription.payment_failed`, `subscription.cancelled`, `subscription.expired`.
+
+### Subscription billing (contracts: `payments.ts` -> `PLAN_CATALOG`)
+
+`PLAN_CATALOG` is the one source of truth for what we sell — key, audience, price (whole INR), interval and what it unlocks. The server bills from it and the UI renders pricing from it.
+
+| product | audience | price | interval | grants |
+|---|---|---|---|---|
+| `BRAND_GROWTH` | BRAND | ₹2,999 | month | `BrandProfile.plan = GROWTH` → 5% brand fee (down from 8%) + advanced analytics |
+| `BRAND_ENTERPRISE` | BRAND | custom | month | `plan = ENTERPRISE` → 5% brand fee. **Not self-serve**: an admin grants it |
+| `CREATOR_BADGE_STANDARD` | CREATOR | ₹999 | year | `CreatorProfile.badgeTier = STANDARD` + `badgeUntil` — paid placement badge |
+| `CREATOR_BADGE_PRIORITY` | CREATOR | ₹1,999 | year | `badgeTier = PRIORITY` — badge + priority placement in discovery |
+
+**The paid badge is not KYC.** `badgeTier`/`badgeUntil` is a paid placement badge; `verifiedAt` is the free, admin-reviewed identity check. Separate columns, separate DTO fields (`badgeTier` vs `verified`), and they must stay separate in copy.
+
+- `GET /payments/billing/products` → `{ products: (PlanProduct & { owned, ownedSubscriptionId })[], audience, currency }` — the caller's own audience (admins see all).
+- `GET /payments/billing/subscription` → `{ subscriptions[], invoices[], entitlements: { brandPlan, brandFeeRate, badgeTier, badgeUntil } }`.
+- `POST /payments/billing/subscribe` `{ product }` (brand products need a BRAND caller, creator products a CREATOR, else 403) → `{ subscription, checkout, alreadyActive }`, mirroring the escrow intent shape. `checkout` is `{ provider: "STRIPE", subscriptionId, hostedUrl, clientSecret, publishableKey } | { provider: "RAZORPAY", subscriptionId, keyId, shortUrl, amount, currency } | { provider: "TEST", subscriptionId, clientSecret, confirmPath }`. Subscribing again while one is live → **409 CONFLICT** (details carry `subscriptionId` and `currentPeriodEnd`); an unfinished PENDING checkout is reused rather than opening a second one.
+- `POST /payments/billing/subscriptions/:id/cancel` → cancels at period end: `cancelAtPeriodEnd = true`, access (and `entitled`) runs to `currentPeriodEnd`, response carries `accessUntil`. A subscription that never activated is closed immediately (CANCELLED).
+- `POST /payments/billing/subscriptions/:id/confirm-test` — test provider only, refused when `NODE_ENV=production`; builds the provider event in-process and runs it through the same path as a webhook.
+- Webhooks: subscription events arrive on the existing `/payments/webhooks/{stripe,razorpay}` endpoints, signature-verified and deduplicated in `provider_webhook_events` like every other provider event. Stripe: `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated|deleted`. Razorpay: `subscription.activated|charged`, `subscription.halted|pending`, `subscription.cancelled|completed|expired`.
+- Admin: `POST /admin/billing/subscriptions` `{ subscriberType, brandId | creatorId, product, priceAmount?, periodDays?, note? }` → 201. Grants Enterprise and comps; recorded as `provider: MANUAL` with `grantedById`, and supersedes a live subscription for the same product. `GET /admin/billing/subscriptions?status&product&subscriberType&page`.
+- Status model: `PENDING → ACTIVE → (PAST_DUE on a failed charge) → EXPIRED`. `PAST_DUE` keeps access while the provider retries. A scheduled sweep (`SUBSCRIPTION_SWEEP_INTERVAL_MS`, default 15 min) marks anything past `currentPeriodEnd` `EXPIRED` and emits `subscription.expired`.
+- Env: Stripe needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and one recurring price per product — `STRIPE_PRICE_BRAND_GROWTH`, `STRIPE_PRICE_CREATOR_BADGE_STANDARD`, `STRIPE_PRICE_CREATOR_BADGE_PRIORITY`. Razorpay needs `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` and `RAZORPAY_PLAN_BRAND_GROWTH`, `RAZORPAY_PLAN_CREATOR_BADGE_STANDARD`, `RAZORPAY_PLAN_CREATOR_BADGE_PRIORITY`. Missing any → `503 INTEGRATION_UNAVAILABLE` naming them, and nothing is written.
+
+### Entitlements (who writes what)
+
+payment-service owns money and the `subscriptions` / `subscription_invoices` tables. It **never** writes `brand_profiles` or `creator_profiles`. user-service consumes `subscription.*` and is the only writer of the entitlement columns:
+
+| event | user-service does |
+|---|---|
+| `subscription.activated` / `.renewed` | sets `BrandProfile.plan` (GROWTH/ENTERPRISE) or `CreatorProfile.badgeTier` + `badgeUntil = currentPeriodEnd`, then emits `brand.profile_updated` / `creator.profile_updated` so search reindexes |
+| `subscription.payment_failed` | nothing — access continues while the provider retries |
+| `subscription.cancelled` | nothing — access runs to `currentPeriodEnd` |
+| `subscription.expired` | brand back to `STARTER`; creator badge cleared (`badgeTier`/`badgeUntil` → null) |
+
+Every payload carries `subscriptionId`, `subscriberType`, `brandId`/`creatorId`, `userId`, `product`, `productName`, `brandPlan`, `badgeTier`, `amount`, `currency`, `interval`, `status`, `currentPeriodStart`/`currentPeriodEnd` and `cancelAtPeriodEnd` — enough for notification-service to write its copy without another lookup. Handlers are idempotent.
+
+**Existing deals keep their rate.** `brandFeeRate`, `creatorFeeRate` and `processingFeeRate` are snapshotted onto the deal from the brand's plan at offer time (`feeSnapshot(brand.plan)` in deal-service) and never re-read afterwards. Buying or losing Growth changes the fee on the **next** offer only; funding an in-flight deal still charges the rate the deal was created with.
 
 ## creator-data-service (contracts: `social.ts`)
 
@@ -90,7 +129,8 @@ Fees: brand 8% (STARTER) / 5% (GROWTH, ENTERPRISE) at funding; processing 2% pas
 ## search-service (contracts: `search.ts`)
 
 Elasticsearch indices `creators`, `briefs` when `ELASTICSEARCH_URL` is set; otherwise a PostgreSQL query engine with the same filters (response `meta.engine = "elasticsearch" | "postgres"`).
-- `GET /search/creators?q&niche&platform&minFollowers&maxFollowers&minEngagement&location&verified&available&sort&page` (brand/admin).
+- `GET /search/creators?q&niche&platform&minFollowers&maxFollowers&minEngagement&location&verified&available&sort&page` (brand/admin). Results carry `badgeTier` (the paid badge, only while in date) as well as `verified` (KYC).
+- Paid placement: in the default `relevance` sort, creators with an in-date badge rank above unbadged ones (PRIORITY, then STANDARD, then none), with the usual ordering inside each group — Elasticsearch sorts on the indexed `badgeRank`, the PostgreSQL engine pages the same three groups in order. A badge never bypasses a filter, and an explicitly chosen sort (`followers`, `engagement`, `trust`, `newest`) is never reordered by it.
 - `GET /search/briefs?q&niche&platform&minBudget&sort&page` (authenticated).
 - Internal: `POST /internal/search/reindex`. Consumes profile/metrics/score/brief events to keep indices fresh.
 

@@ -129,9 +129,10 @@ export default function HowItWorksPage() {
           description="Deals move forward one state at a time. Anything off the path is rejected — no skipping escrow, no paying out before approval."
         />
         <Reveal className="mt-14">
-          <div className="overflow-x-auto rounded-3xl border bg-card p-6 sm:p-10">
-            <div className="min-w-[720px]">
-              <ol className="flex items-center">
+          {/* Only the stage track needs the 720px track; the legend below wraps normally. */}
+          <div className="rounded-3xl border bg-card p-6 sm:p-10">
+            <div className="-mx-6 overflow-x-auto px-6 pb-2 sm:mx-0 sm:px-0 sm:pb-0">
+              <ol className="flex min-w-[720px] items-center">
                 {DEAL_STAGES.map((s, i) => (
                   <li key={s.status} className="flex flex-1 items-center last:flex-none">
                     <div
@@ -148,7 +149,8 @@ export default function HowItWorksPage() {
                   </li>
                 ))}
               </ol>
-              <div className="mt-8 grid grid-cols-2 gap-6">
+            </div>
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 sm:gap-6">
                 <div className="flex items-start gap-3 rounded-xl border border-destructive/25 bg-danger-soft p-4">
                   <ShieldAlert className="mt-0.5 size-5 shrink-0 text-destructive" />
                   <div>
@@ -167,7 +169,6 @@ export default function HowItWorksPage() {
                     </p>
                   </div>
                 </div>
-              </div>
             </div>
           </div>
         </Reveal>

@@ -5,7 +5,7 @@ import { Wordmark } from "@/components/marketing/wordmark"
 
 export default function NotFound() {
   return (
-    <div className="relative isolate flex min-h-dvh flex-col px-4 py-6 sm:px-10">
+    <div className="relative isolate flex min-h-dvh flex-col overflow-hidden px-4 py-6 sm:px-10">
       <div aria-hidden className="absolute inset-0 -z-10 bg-grid opacity-50 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]" />
       <div aria-hidden className="absolute left-1/2 top-[-12rem] -z-10 h-[28rem] w-[50rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
       <Wordmark />

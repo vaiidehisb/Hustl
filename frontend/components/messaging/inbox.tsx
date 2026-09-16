@@ -75,7 +75,7 @@ export function Inbox({
       ) : !list.isPending && conversations.length === 0 ? (
         <EmptyState icon={MessagesSquare} title="No conversations yet" description="Threads open automatically when an offer is sent or an application is shortlisted." />
       ) : (
-        <div className="flex h-[calc(100dvh-13rem)] min-h-[32rem] overflow-hidden rounded-xl border bg-card shadow-xs">
+        <div className="flex h-[calc(100dvh-17rem)] min-h-[24rem] overflow-hidden rounded-xl border bg-card shadow-xs sm:h-[calc(100dvh-13rem)] sm:min-h-[32rem]">
           <aside className={cn("flex w-full flex-col border-r md:w-80 lg:w-96", activeId && "hidden md:flex")}>
             <ConversationList
               conversations={filtered}

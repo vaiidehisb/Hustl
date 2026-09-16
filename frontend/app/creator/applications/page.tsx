@@ -64,7 +64,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
             href={k === "active" ? "/creator/applications" : `/creator/applications?tab=${k}`}
             aria-current={tab === k ? "page" : undefined}
             className={cn(
-              "inline-flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              "inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               tab === k ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
             )}
           >

@@ -29,7 +29,7 @@ function NavLinks({ items: rawItems, onNavigate }: { items: NavItem[]; onNavigat
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              "group flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             )}
           >
@@ -53,10 +53,10 @@ export function MobileNav({ items, portalLabel }: { items: NavItem[]; portalLabe
   const [open, setOpen] = useState(false)
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger className="grid size-9 place-items-center rounded-lg border lg:hidden" aria-label="Open menu">
+      <SheetTrigger className="grid size-10 place-items-center rounded-lg border lg:hidden" aria-label="Open menu">
         <Menu className="size-4" />
       </SheetTrigger>
-      <SheetContent side="left" className="w-72 bg-sidebar p-0">
+      <SheetContent side="left" className="w-72 max-w-[85vw] overflow-y-auto bg-sidebar p-0">
         <SheetTitle className="flex h-16 items-center gap-2 px-5">
           <Logo size="sm" />
           <span className="font-display text-lg font-extrabold">hustl.</span>

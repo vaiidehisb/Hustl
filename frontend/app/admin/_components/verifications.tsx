@@ -65,13 +65,13 @@ function VerificationCard({ item }: { item: AdminVerificationItem }) {
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-3 text-sm">
           {item.creator && <p className="text-xs text-muted-foreground">Creator @{item.creator.handle}</p>}
-          {item.brand?.gstin && <p className="text-xs text-muted-foreground">GSTIN {item.brand.gstin}</p>}
+          {item.brand?.gstin && <p className="text-xs break-all text-muted-foreground">GSTIN {item.brand.gstin}</p>}
           {details.length > 0 && (
             <ul className="space-y-1 text-xs">
               {details.map(([k, v]) => (
                 <li key={k} className="flex justify-between gap-3 rounded-md bg-muted/60 px-3 py-1.5">
-                  <span className="text-muted-foreground">{k}</span>
-                  <span className="truncate font-mono">{String(v)}</span>
+                  <span className="shrink-0 text-muted-foreground">{k}</span>
+                  <span className="min-w-0 truncate font-mono">{String(v)}</span>
                 </li>
               ))}
             </ul>

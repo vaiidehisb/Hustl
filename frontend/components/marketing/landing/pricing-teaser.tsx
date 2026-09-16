@@ -16,7 +16,7 @@ export function PricingTeaser() {
   return (
     <Section>
       <Reveal>
-        <div className="grid gap-10 rounded-3xl border bg-card p-8 sm:p-12 lg:grid-cols-[1fr_1.4fr] lg:items-center">
+        <div className="grid gap-10 rounded-3xl border bg-card p-6 sm:p-12 lg:grid-cols-[1fr_1.4fr] lg:items-center">
           <div>
             <div className="text-sm font-semibold text-primary">Pricing</div>
             <h2 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">Free to join. We earn when deals close.</h2>

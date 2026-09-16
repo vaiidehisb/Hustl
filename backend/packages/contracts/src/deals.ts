@@ -190,6 +190,8 @@ export type DealSummary = DealPartySummary & {
   allowedActions: DealUiAction[]
   counterRoundsRemaining: number
   milestoneRollup: DealMilestoneRollup
+  /** Fee rates relevant to the caller: brand sees brand+processing, creator sees creator. */
+  feeRates: { brand?: number; processing?: number; creator?: number }
   amount: number
   currency: string
   paymentMode: PaymentMode
@@ -296,8 +298,6 @@ export type ReviewDTO = { id: string; dealId: string; authorId: string; subjectU
 
 export type DealDetail = DealSummary & {
   deliverables: string
-  /** Fee rates relevant to the caller: brand sees brand+processing, creator sees creator. */
-  feeRates: { brand?: number; processing?: number; creator?: number }
   offers: DealOfferDTO[]
   milestones: MilestoneDTO[]
   contract: ContractDTO | null

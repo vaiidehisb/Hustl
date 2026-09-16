@@ -14,7 +14,7 @@ export default function RouteError({ error, reset }: { error: Error & { digest?:
   }, [error])
 
   return (
-    <div className="relative isolate flex min-h-dvh flex-col px-4 py-6 sm:px-10">
+    <div className="relative isolate flex min-h-dvh flex-col overflow-hidden px-4 py-6 sm:px-10">
       <div aria-hidden className="absolute inset-0 -z-10 bg-grid opacity-50 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]" />
       <Wordmark />
       <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center text-center">

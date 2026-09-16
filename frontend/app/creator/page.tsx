@@ -1,7 +1,7 @@
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import { ArrowRight, BadgeCheck, CheckCircle2, Circle, FileSignature, Handshake, Lock, PartyPopper, RotateCcw, Send, Sparkles, Star, Wallet } from "lucide-react"
-import type { BriefDTO, DealDetail, DealSummary } from "@hustl/contracts"
+import type { BriefDTO, DealSummary } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Avatar, PageHeader, Panel, Pill, ScoreRing, StatCard, TextLink } from "@/components/app/ui"
 import { EarningsChart } from "@/components/creator/charts"
@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/creator/states"
 import { completionChecklist, dueLabel, monthLabel } from "@/components/creator/lib"
 import type { Tone } from "@/lib/deals/machine"
 import { inr, timeAgo } from "@/lib/format"
-import { getBriefFit, getCreatorOverview, getDealDetails, getMe, getMyDeals, getOpenBriefs, load, soft, type BriefFit } from "./data"
+import { getBriefFit, getCreatorOverview, getMe, getMyDeals, getOpenBriefs, load, soft, type BriefFit } from "./data"
 
 export const metadata = { title: "Dashboard" }
 
@@ -22,8 +22,8 @@ function greeting() {
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
 }
 
-/** Everything the creator can act on right now, straight from the server's `allowedActions`. */
-function movesFor(summary: DealSummary, deal: DealDetail): Move[] {
+/** Everything the creator can act on right now, straight from the summary's `allowedActions` and milestone roll-up. */
+function movesFor(deal: DealSummary): Move[] {
   const moves: Move[] = []
   const updated = new Date(deal.updatedAt).getTime()
   const brand = deal.brand.companyName
@@ -54,8 +54,10 @@ function movesFor(summary: DealSummary, deal: DealDetail): Move[] {
       due: updated,
     })
 
-  for (const m of deal.milestones) {
-    if (!m.allowedActions.includes("SUBMIT")) continue
+  // The next unsettled milestone is the only one the creator can deliver.
+  const next = deal.milestoneRollup.next
+  if (next && deal.status === "IN_PROGRESS" && (next.status === "PENDING" || next.status === "REVISION_REQUESTED")) {
+    const m = next
     const revision = m.status === "REVISION_REQUESTED"
     const due = dueLabel(m.dueDate)
     moves.push({
@@ -79,7 +81,7 @@ function movesFor(summary: DealSummary, deal: DealDetail): Move[] {
       tag: "Leave a review",
       tone: "info",
       title: `Review your deal with ${brand}`,
-      detail: `${summary.title} · completed ${timeAgo(deal.completedAt ?? deal.updatedAt)}`,
+      detail: `${deal.title} · completed ${timeAgo(deal.completedAt ?? deal.updatedAt)}`,
       priority: 4,
       due: updated,
     })
@@ -108,14 +110,11 @@ export default async function CreatorDashboard() {
   const overview = overviewResult.ok ? overviewResult.data : null
   const deals = dealsResult.ok ? dealsResult.data.items : []
 
-  const actionable = deals.filter((d) => ACTIONABLE.includes(d.status)).slice(0, 8)
-  const details = await getDealDetails(actionable.map((d) => d.id))
-  const moves = actionable
-    .flatMap((d) => {
-      const detail = details.get(d.id)
-      return detail ? movesFor(d, detail) : []
-    })
+  const moves = deals
+    .filter((d) => ACTIONABLE.includes(d.status))
+    .flatMap(movesFor)
     .sort((a, b) => a.priority - b.priority || a.due - b.due)
+    .slice(0, 8)
 
   const inboundOffers = deals.filter((d) => (d.status === "OFFER_SENT" || d.status === "NEGOTIATING") && d.awaitingParty === "CREATOR").length
   const chart = (overview?.monthlyEarnings ?? []).slice(-6).map((m) => ({ label: monthLabel(m.month), net: m.amount }))

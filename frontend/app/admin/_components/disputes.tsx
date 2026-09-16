@@ -74,10 +74,10 @@ function DisputeCard({ dispute }: { dispute: DisputeDTO }) {
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Reason</div>
             <p className="mt-1 whitespace-pre-wrap">{dispute.reason}</p>
           </div>
-          <dl className="grid grid-cols-2 gap-3 text-xs">
-            <div>
+          <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+            <div className="min-w-0">
               <dt className="text-muted-foreground">Deal id</dt>
-              <dd className="font-mono">{dispute.dealId}</dd>
+              <dd className="font-mono break-all">{dispute.dealId}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Evidence files</dt>

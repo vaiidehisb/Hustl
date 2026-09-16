@@ -100,7 +100,7 @@ export default function PricingPage() {
             <Reveal key={p.name} delay={i * 0.06} className="h-full">
               <div
                 className={cn(
-                  "relative flex h-full flex-col rounded-3xl border bg-card p-7",
+                  "relative flex h-full flex-col rounded-3xl border bg-card p-6 sm:p-7",
                   p.featured && "border-primary/50 shadow-xl shadow-primary/10 ring-1 ring-primary/30",
                 )}
               >
@@ -142,8 +142,8 @@ export default function PricingPage() {
             <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
               <BadgeCheck className="size-4 text-primary" /> Verified Creator badge
             </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="font-display text-4xl font-extrabold">₹999–₹1,999</span>
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
+              <span className="font-display text-3xl font-extrabold sm:text-4xl">₹999–₹1,999</span>
               <span className="text-muted-foreground">/yr</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">Optional. ID verification, a profile badge and priority placement in brand search.</p>

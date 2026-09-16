@@ -25,7 +25,7 @@ export function PageHeader({
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
         {description && <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>}
     </div>
   )
 }
@@ -41,7 +41,8 @@ const TONE_CLASS: Record<Tone, string> = {
 
 export function Pill({ tone: t = "neutral", children, className }: { tone?: Tone; children: React.ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", TONE_CLASS[t], className)}>
+    // Pills carry AI match reasons too, which are long — wrap rather than overflow the row.
+    <span className={cn("inline-flex max-w-full items-center gap-1 break-words rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", TONE_CLASS[t], className)}>
       {children}
     </span>
   )
@@ -106,12 +107,12 @@ export function Panel({
   return (
     <section className={cn("rounded-xl border bg-card shadow-xs", className)}>
       {(title || action) && (
-        <header className="flex items-start justify-between gap-4 border-b px-5 py-4">
-          <div>
-            {title && <h2 className="text-sm font-semibold">{title}</h2>}
-            {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+        <header className="flex flex-col gap-2 border-b px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            {title && <h2 className="text-sm font-semibold break-words">{title}</h2>}
+            {description && <p className="mt-0.5 text-xs break-words text-muted-foreground">{description}</p>}
           </div>
-          {action}
+          {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
         </header>
       )}
       <div className={cn("p-5", bodyClassName)}>{children}</div>

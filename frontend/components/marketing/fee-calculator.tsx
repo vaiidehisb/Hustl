@@ -17,11 +17,12 @@ const pc = (n: number) => `${+(n * 100).toFixed(1)}%`
 function AmountField({ value, onChange, label }: { value: number; onChange: (n: number) => void; label: string }) {
   return (
     <div>
-      <div className="flex items-end justify-between gap-4">
+      {/* Stacks on phones — side by side the label was squeezed to ~120px. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
         <Label htmlFor={`amt-${label}`} className="text-sm text-muted-foreground">
           {label}
         </Label>
-        <div className="relative w-40">
+        <div className="relative w-full sm:w-40">
           <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-sm text-muted-foreground">₹</span>
           <Input
             id={`amt-${label}`}
@@ -65,11 +66,11 @@ export function FeeCalculator() {
   return (
     <div className="rounded-3xl border bg-card p-5 shadow-sm sm:p-8">
       <Tabs defaultValue="brand" className="gap-8">
-        <TabsList className="h-11 w-full rounded-full p-1 sm:w-fit">
-          <TabsTrigger value="brand" className="rounded-full px-5">
+        <TabsList className="h-11 w-full rounded-full p-1 sm:w-fit [&>*]:min-w-0">
+          <TabsTrigger value="brand" className="rounded-full px-3 whitespace-nowrap sm:px-5">
             <Building2 /> I’m a brand
           </TabsTrigger>
-          <TabsTrigger value="creator" className="rounded-full px-5">
+          <TabsTrigger value="creator" className="rounded-full px-3 whitespace-nowrap sm:px-5">
             <UserRound /> I’m a creator
           </TabsTrigger>
         </TabsList>

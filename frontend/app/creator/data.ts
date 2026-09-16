@@ -78,12 +78,6 @@ export const getMyApplications = (query: { status?: ApplicationStatus; page?: nu
 export const getMyDeals = (query: { status?: string; page?: number; pageSize?: number } = {}) => paged<DealSummary>("/deals", { role: "creator", ...query })
 export const getDeal = (id: string) => apiFetch<DealDetail>(`/deals/${encodeURIComponent(id)}`)
 
-/** Details for a handful of deals at once — each one fails soft. */
-export async function getDealDetails(ids: string[]): Promise<Map<string, DealDetail>> {
-  const details = await Promise.all(ids.map((id) => soft(() => getDeal(id))))
-  return new Map(details.filter((d): d is DealDetail => !!d).map((d) => [d.id, d]))
-}
-
 const NEEDS_WORK: string[] = ["FUNDED", "IN_PROGRESS", "AGREED", "DISPUTED"]
 
 /**
@@ -94,10 +88,9 @@ export async function getCreatorBadges(): Promise<{ offers: number; revisions: n
   const page = await soft(() => getMyDeals({ pageSize: 100 }))
   if (!page) return { offers: 0, revisions: 0 }
   const offers = page.items.filter((d) => (d.status === "OFFER_SENT" || d.status === "NEGOTIATING") && d.awaitingParty === "CREATOR").length
-  const workable = page.items.filter((d) => NEEDS_WORK.includes(d.status)).slice(0, 5)
-  const details = await getDealDetails(workable.map((d) => d.id))
-  let revisions = 0
-  for (const deal of details.values()) revisions += deal.milestones.filter((m) => m.status === "REVISION_REQUESTED").length
+  const revisions = page.items
+    .filter((d) => NEEDS_WORK.includes(d.status))
+    .reduce((n, d) => n + d.milestoneRollup.revisionRequested, 0)
   return { offers, revisions }
 }
 

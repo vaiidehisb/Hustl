@@ -1,13 +1,13 @@
 import Link from "next/link"
 import { ArrowRight, CheckCircle2, FileText, Handshake, Inbox, PenLine, Plus, ShieldCheck, Sparkles, Wallet } from "lucide-react"
-import type { ApplicationDTO, DealDetail, DealSummary } from "@hustl/contracts"
+import type { ApplicationDTO, DealSummary } from "@hustl/contracts"
 import { Button } from "@/components/ui/button"
 import { Avatar, EmptyState, PageHeader, Panel, Pill, ScoreRing, StatCard, TextLink } from "@/components/app/ui"
 import { SpendChart } from "@/components/brand/charts"
 import { MatchRow } from "@/components/brand/match-row"
 import { BrandStatusBadge } from "@/components/brand/status"
 import { ErrorPanel, AiErrorPanel } from "@/components/brand/error-panel"
-import { loadApplications, loadBriefs, loadDeals, loadMatches, loadMe, loadOverview, soft, dealDetail } from "@/components/brand/data"
+import { loadApplications, loadBriefs, loadDeals, loadMatches, loadMe, loadOverview } from "@/components/brand/data"
 import { looksActionable, monthLabel } from "@/components/brand/helpers"
 import { compact, inr, timeAgo } from "@/lib/format"
 import { requireRole } from "@/lib/auth/session"
@@ -16,8 +16,8 @@ export const metadata = { title: "Dashboard" }
 
 type QueueItem = { key: string; href: string; icon: typeof Inbox; title: string; detail: string; cta: string; at: string; tone: "warning" | "brand" | "info" }
 
-/** The queue is derived from `allowedActions` on each deal the API says we can act on. */
-function queueFor(deal: DealDetail): QueueItem[] {
+/** The queue is derived from `allowedActions` and the milestone roll-up carried on each deal summary. */
+function queueFor(deal: DealSummary): QueueItem[] {
   const out: QueueItem[] = []
   const who = deal.creator.name
   const href = `/brand/deals/${deal.id}`
@@ -30,16 +30,17 @@ function queueFor(deal: DealDetail): QueueItem[] {
     out.push({ key: `${deal.id}-fund`, href, icon: Wallet, title: "Fund escrow to start", detail: `${who} · ${deal.title} · ${inr(deal.amount)}`, cta: "Fund", at: deal.updatedAt, tone: "brand" })
   if (actions.has("REVIEW")) out.push({ key: `${deal.id}-review`, href, icon: CheckCircle2, title: `Leave a review for ${who}`, detail: deal.title, cta: "Review", at: deal.updatedAt, tone: "info" })
 
-  for (const m of deal.milestones) {
-    if (!m.allowedActions.includes("APPROVE")) continue
+  const { awaitingReview, next } = deal.milestoneRollup
+  if (awaitingReview > 0) {
+    const submitted = next?.status === "SUBMITTED" ? next : null
     out.push({
-      key: m.id,
+      key: `${deal.id}-milestone`,
       href,
       icon: CheckCircle2,
-      title: `Review "${m.title}"`,
-      detail: `${who} · ${deal.title} · ${inr(m.amount)}`,
+      title: submitted ? `Review "${submitted.title}"` : `${awaitingReview} deliverable${awaitingReview === 1 ? "" : "s"} to review`,
+      detail: `${who} · ${deal.title}${submitted ? ` · ${inr(submitted.amount)}` : ""}`,
       cta: "Review",
-      at: m.submittedAt ?? deal.updatedAt,
+      at: deal.updatedAt,
       tone: "warning",
     })
   }
@@ -55,12 +56,11 @@ export default async function BrandDashboard() {
   const plan = brand?.plan ?? "STARTER"
 
   const deals: DealSummary[] = dealsRes.ok ? dealsRes.data : []
-  const candidates = deals.filter(looksActionable).slice(0, 6)
-  const details = await Promise.all(candidates.map((d) => soft(() => dealDetail(d.id))))
-  const queue = details
-    .filter((d): d is DealDetail => !!d)
+  const queue = deals
+    .filter(looksActionable)
     .flatMap(queueFor)
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 6)
 
   const liveBriefs = briefsRes.ok ? briefsRes.data.filter((b) => b.status === "PUBLISHED") : []
   const newestBrief = liveBriefs[0] ?? null

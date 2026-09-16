@@ -299,7 +299,7 @@ function OfferForm({
             {milestones.fields.map((field, i) => (
               <div key={field.id} className="flex items-center gap-2">
                 <Input aria-label={`Milestone ${i + 1} title`} placeholder="e.g. Draft video" className="h-8 bg-background" {...register(`milestones.${i}.title` as const)} />
-                <div className="relative w-24 shrink-0">
+                <div className="relative w-20 shrink-0 sm:w-24">
                   <Input
                     aria-label={`Milestone ${i + 1} percent`}
                     type="number"

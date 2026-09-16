@@ -74,13 +74,13 @@ function FlagCard({ flag }: { flag: FraudFlagDto }) {
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-3 text-sm">
           <dl className="grid gap-2 text-xs sm:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <dt className="text-muted-foreground">Code</dt>
-              <dd className="font-mono">{flag.code}</dd>
+              <dd className="font-mono break-all">{flag.code}</dd>
             </div>
-            <div>
+            <div className="min-w-0">
               <dt className="text-muted-foreground">Subject</dt>
-              <dd>
+              <dd className="break-all">
                 {flag.creatorHandle ? (
                   <Link href={`/creators/${flag.creatorHandle}`} className="text-primary hover:underline">
                     @{flag.creatorHandle}
@@ -97,8 +97,8 @@ function FlagCard({ flag }: { flag: FraudFlagDto }) {
               <ul className="mt-1 space-y-1 text-xs">
                 {details.map(([k, v]) => (
                   <li key={k} className="flex justify-between gap-3 rounded-md bg-muted/60 px-3 py-1.5">
-                    <span className="text-muted-foreground">{k}</span>
-                    <span className="truncate font-mono">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
+                    <span className="shrink-0 text-muted-foreground">{k}</span>
+                    <span className="min-w-0 truncate font-mono">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
                   </li>
                 ))}
               </ul>

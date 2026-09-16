@@ -186,7 +186,7 @@ export function Thread({ conversation, currentUserId, onBack, dealHref }: { conv
           <div className="truncate text-xs text-muted-foreground">{typing ? "typing…" : (context ?? conversation.counterpart?.handle ?? "")}</div>
         </div>
         {dealHref && (
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm" className="shrink-0">
             <Link href={dealHref}>Open deal</Link>
           </Button>
         )}
@@ -223,7 +223,8 @@ export function Thread({ conversation, currentUserId, onBack, dealHref }: { conv
               <div className={cn("max-w-[78%]", mine && "text-right")}>
                 <div
                   className={cn(
-                    "inline-block whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-left text-sm",
+                    // `break-words` so a pasted deliverable URL can't widen the pane.
+                    "inline-block max-w-full overflow-hidden break-words whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-left text-sm",
                     mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-muted",
                     item.kind === "pending" && !failed && "opacity-70",
                     failed && "bg-danger-soft text-destructive",

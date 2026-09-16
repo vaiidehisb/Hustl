@@ -173,8 +173,16 @@ function milestoneRollup(milestones: SummaryParties["milestones"]): DealMileston
   }
 }
 
+const feeRatesFor = (d: Deal, party: ViewerParty) =>
+  party === "BRAND"
+    ? { brand: d.brandFeeRate, processing: d.processingFeeRate }
+    : party === "CREATOR"
+      ? { creator: d.creatorFeeRate }
+      : { brand: d.brandFeeRate, processing: d.processingFeeRate, creator: d.creatorFeeRate }
+
 export function toDealSummary(d: Deal & SummaryParties, yourParty: ViewerParty, viewerId?: string): DealSummary {
   return {
+    feeRates: feeRatesFor(d, yourParty),
     allowedActions: dealAllowedActions(d, yourParty, { contract: d.contract, reviewedByViewer: !!viewerId && d.reviews.some((r) => r.authorId === viewerId) }),
     counterRoundsRemaining: Math.max(0, MAX_COUNTER_ROUNDS - d.negotiationRounds),
     milestoneRollup: milestoneRollup(d.milestones),
@@ -332,12 +340,9 @@ const toEventDTO = (e: DealEvent): DealEventDTO => ({
 const toReviewDTO = (r: Review): ReviewDTO => ({ id: r.id, dealId: r.dealId, authorId: r.authorId, subjectUserId: r.subjectUserId, rating: r.rating, comment: r.comment, createdAt: r.createdAt.toISOString() })
 
 export function toDealDetail(d: DealDetailRow, party: ViewerParty, viewerId: string): DealDetail {
-  const feeRates =
-    party === "BRAND" ? { brand: d.brandFeeRate, processing: d.processingFeeRate } : party === "CREATOR" ? { creator: d.creatorFeeRate } : { brand: d.brandFeeRate, processing: d.processingFeeRate, creator: d.creatorFeeRate }
   return {
     ...toDealSummary(d, party, viewerId),
     deliverables: d.deliverables,
-    feeRates,
     offers: d.offers.map(toOfferDTO),
     milestones: d.milestones.map((m) => toMilestoneDTO(d, m, d.milestones, party)),
     contract: d.contract ? toContractDTO(d.contract, party) : null,

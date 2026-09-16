@@ -60,15 +60,15 @@ export function Hero() {
             </Reveal>
 
             <Reveal delay={0.2}>
-              <dl className="mt-10 grid max-w-lg grid-cols-3 gap-6 border-t pt-6">
+              <dl className="mt-10 grid max-w-lg grid-cols-3 gap-4 border-t pt-6 sm:gap-6">
                 {[
                   { k: "Held in escrow", v: "100%" },
                   { k: "Dispute window", v: "72h" },
                   { k: "Creator fee", v: "5%" },
                 ].map((s) => (
-                  <div key={s.k}>
-                    <dt className="text-xs text-muted-foreground">{s.k}</dt>
-                    <dd className="mt-1 font-display text-2xl font-bold tabular-nums">{s.v}</dd>
+                  <div key={s.k} className="min-w-0">
+                    <dt className="text-[11px] text-muted-foreground sm:text-xs">{s.k}</dt>
+                    <dd className="mt-1 font-display text-xl font-bold tabular-nums sm:text-2xl">{s.v}</dd>
                   </div>
                 ))}
               </dl>

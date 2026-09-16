@@ -19,7 +19,7 @@ export function LinkTabs({ tabs, active, className }: { tabs: LinkTab[]; active:
               scroll={false}
               aria-current={on ? "page" : undefined}
               className={cn(
-                "relative -mb-px inline-flex items-center gap-2 border-b-2 px-3 pt-1 pb-2.5 text-sm font-medium whitespace-nowrap transition-colors",
+                "relative -mb-px inline-flex min-h-10 items-center gap-2 border-b-2 px-3 pt-1 pb-2.5 text-sm font-medium whitespace-nowrap transition-colors",
                 on ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >

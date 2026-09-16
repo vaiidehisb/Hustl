@@ -62,7 +62,7 @@ export function PayoutAccountPanel({ account, error }: { account: PayoutAccountD
         <div className="min-w-0">
           <div className="font-medium">{account.provider ? `${account.provider[0]}${account.provider.slice(1).toLowerCase()} payouts` : "No provider connected"}</div>
           <p className="mt-1 text-sm text-muted-foreground">{state.copy}</p>
-          {account.providerAccountId && <p className="mt-1 font-mono text-xs text-muted-foreground">{account.providerAccountId}</p>}
+          {account.providerAccountId && <p className="mt-1 font-mono text-xs break-all text-muted-foreground">{account.providerAccountId}</p>}
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import { DealRow } from "@/components/creator/deal-row"
 import { ErrorState } from "@/components/creator/states"
 import { ACTIVE_DEAL_STATUSES, isInboundOffer, paymentModeLabel } from "@/components/creator/lib"
 import { inr, shortDate, timeAgo } from "@/lib/format"
-import { getDealDetails, getMyDeals, load } from "../data"
+import { getMyDeals, load } from "../data"
 
 export const metadata = { title: "Offers & deals" }
 
@@ -29,9 +29,6 @@ export default async function DealsPage() {
   const active = deals.filter((d) => (ACTIVE_DEAL_STATUSES as readonly string[]).includes(d.status) && !isInboundOffer(d))
   const past = deals.filter((d) => !(ACTIVE_DEAL_STATUSES as readonly string[]).includes(d.status))
   const escrowValue = deals.filter((d) => d.status === "FUNDED" || d.status === "IN_PROGRESS").reduce((s, d) => s + d.amount, 0)
-
-  // `allowedActions` only exists on the deal detail — load it for the rows the creator is most likely to act on.
-  const details = await getDealDetails([...inbound, ...active].slice(0, 10).map((d) => d.id))
 
   return (
     <div>
@@ -70,8 +67,7 @@ export default async function DealsPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {inbound.map((d) => {
-                  const detail = details.get(d.id)
-                  const { net } = payoutBreakdown(d.amount, detail?.feeRates.creator ?? CREATOR_FEE_RATE)
+                  const { net } = payoutBreakdown(d.amount, d.feeRates.creator ?? CREATOR_FEE_RATE)
                   return (
                     <div key={d.id} className="relative flex flex-col overflow-hidden rounded-xl border border-primary/25 bg-card p-5 shadow-sm">
                       <div className="absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
@@ -85,7 +81,7 @@ export default async function DealsPage() {
                           <div className="text-xs text-muted-foreground">Received {timeAgo(d.updatedAt)}</div>
                         </div>
                         <Pill tone={d.negotiationRounds ? "warning" : "brand"}>
-                          {d.negotiationRounds ? `Counter · round ${d.negotiationRounds}${detail ? ` of ${d.negotiationRounds + detail.counterRoundsRemaining}` : ""}` : "New offer"}
+                          {d.negotiationRounds ? `Counter · round ${d.negotiationRounds} of ${d.negotiationRounds + d.counterRoundsRemaining}` : "New offer"}
                         </Pill>
                       </div>
                       <h3 className="mt-3 font-semibold leading-snug">{d.title}</h3>
@@ -93,11 +89,10 @@ export default async function DealsPage() {
                         <span className="font-display text-2xl font-bold tabular-nums">{inr(d.amount)}</span>
                         <span className="text-xs text-muted-foreground">you receive {inr(net)} after fees</span>
                       </div>
-                      {detail?.deliverables && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{detail.deliverables}</p>}
                       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Lock className="size-3.5" /> {paymentModeLabel(d.paymentMode)}
-                          {detail && detail.milestones.length > 1 && ` · ${detail.milestones.length} milestones`}
+                          {d.milestoneRollup.total > 1 && ` · ${d.milestoneRollup.total} milestones`}
                         </span>
                         {d.dueDate && (
                           <span className="inline-flex items-center gap-1">
@@ -123,7 +118,7 @@ export default async function DealsPage() {
             ) : (
               <div className="divide-y">
                 {active.map((d) => (
-                  <DealRow key={d.id} deal={d} actions={details.get(d.id)?.allowedActions ?? []} />
+                  <DealRow key={d.id} deal={d} actions={d.allowedActions} />
                 ))}
               </div>
             )}

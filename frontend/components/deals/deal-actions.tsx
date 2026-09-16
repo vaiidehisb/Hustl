@@ -182,7 +182,7 @@ export function CounterOfferDialog({ deal }: { deal: DealDetail }) {
               {rows.map((r, i) => (
                 <div key={i} className="flex gap-2">
                   <Input aria-label={`Milestone ${i + 1} title`} value={r.title} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
-                  <div className="relative w-24 shrink-0">
+                  <div className="relative w-20 shrink-0 sm:w-24">
                     <Input
                       aria-label={`Milestone ${i + 1} percent`}
                       type="number"
@@ -300,7 +300,7 @@ export function DisputeDialog({ dealId, milestones, windowHours }: { dealId: str
               id="dispute-milestone"
               value={milestoneId}
               onChange={(e) => setMilestoneId(e.target.value)}
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-10 w-full rounded-md border bg-background px-3 text-base sm:h-9 sm:text-sm"
             >
               {milestones.map((m) => (
                 <option key={m.id} value={m.id}>

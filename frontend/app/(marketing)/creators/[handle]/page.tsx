@@ -257,7 +257,7 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
             {scoreRings.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">Scores appear once enough verified data is available.</p>
             ) : (
-              <div className="mt-4 grid grid-cols-4 gap-2">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2">
                 {scoreRings.map((s) => (
                   <ScoreRing key={s.label} score={s.score} size={52} label={s.label} />
                 ))}

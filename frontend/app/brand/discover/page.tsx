@@ -259,7 +259,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
                     </div>
                   )}
 
-                  <div className="mt-auto flex items-center gap-2 pt-4">
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
                     <div className="mr-auto">
                       <div className="text-[11px] text-muted-foreground">budget</div>
                       <div className="text-sm font-semibold tabular-nums">{matchBrief?.budgetPerCreator ? inr(matchBrief.budgetPerCreator) : "On request"}</div>

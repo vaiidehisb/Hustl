@@ -142,6 +142,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* A bare `grid` (columns only from a breakpoint up) creates one implicit
+     auto column that sizes to its widest child, which overflows and clips on
+     phones. Bound implicit tracks to the container instead. */
+  .grid:not([class*="grid-flow-col"]) {
+    grid-auto-columns: minmax(0, 1fr);
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01";

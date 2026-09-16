@@ -94,7 +94,8 @@ export async function DealRoom({ dealId, viewer }: { dealId: string; viewer: Par
       </header>
 
       {deal.status !== "CANCELLED" && (
-        <ol className="grid grid-cols-6 gap-1.5">
+        // Six 55px columns truncate every label at 375px — wrap to two rows instead.
+        <ol className="grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-6 sm:gap-1.5">
           {DEAL_STAGES.map((s, i) => {
             const done = i < index || deal.status === "COMPLETED"
             const current = i === index && deal.status !== "COMPLETED"
@@ -108,7 +109,13 @@ export async function DealRoom({ dealId, viewer }: { dealId: string; viewer: Par
         </ol>
       )}
 
-      <section className={cn("flex flex-col gap-4 rounded-xl border p-5 sm:flex-row sm:items-center", TONE_CLASS[next.tone])}>
+      {/* Pinned under the app header on phones so the primary action stays reachable. */}
+      <section
+        className={cn(
+          "sticky top-16 z-20 flex flex-col gap-4 rounded-xl border p-5 shadow-sm backdrop-blur-sm sm:static sm:flex-row sm:items-center sm:shadow-none sm:backdrop-blur-none",
+          TONE_CLASS[next.tone],
+        )}
+      >
         <span
           className={cn(
             "grid size-10 shrink-0 place-items-center rounded-full",
@@ -121,7 +128,7 @@ export async function DealRoom({ dealId, viewer }: { dealId: string; viewer: Par
           <h2 className="font-semibold">{next.title}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">{next.body}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
           {deal.allowedActions.includes("FUND") && <FundEscrowDialog deal={deal} funding={funding} disabled={!!deal.holdUntil && new Date(deal.holdUntil) > new Date()} />}
           <DealActionBar deal={deal} signerName={user.name ?? ""} only={["ACCEPT", "DECLINE", "COUNTER", "SIGN", "REVIEW", "CANCEL"]} />
         </div>

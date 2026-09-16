@@ -28,7 +28,7 @@ export function DealRow({ deal, actions = [] }: { deal: DealSummary; actions?: D
           <span className="line-clamp-1">{step.text}</span>
         </div>
       </div>
-      <div className="text-right">
+      <div className="shrink-0 text-right">
         <div className="font-display font-bold tabular-nums">{inr(deal.amount)}</div>
         <div className="text-[11px] text-muted-foreground">{deal.currency}</div>
       </div>

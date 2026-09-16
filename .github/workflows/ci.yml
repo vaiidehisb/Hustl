@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main, frontend, shubham]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only secrets; production values come from the deployment environment.
+  JWT_SECRET: ci-jwt-secret-value-at-least-32-characters
+  INTERNAL_SERVICE_TOKEN: ci-internal-service-token
+
+jobs:
+  backend:
+    name: Backend (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [test, build]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hustl
+          POSTGRES_PASSWORD: hustl
+          POSTGRES_DB: hustl
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hustl" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://hustl:hustl@localhost:5432/hustl?schema=public
+      TEST_DATABASE_URL: postgresql://hustl:hustl@localhost:5432/hustl_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Generate the Prisma client
+        run: npm run db:generate
+        working-directory: backend
+      - name: Create the test database
+        run: PGPASSWORD=hustl createdb -h localhost -U hustl hustl_test
+      - name: Apply migrations
+        run: |
+          npm run db:migrate
+          DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate
+        working-directory: backend
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: backend
+      - name: Test
+        if: matrix.suite == 'test'
+        run: npm test
+        working-directory: backend
+      - name: Build every service
+        if: matrix.suite == 'build'
+        run: npm run build
+        working-directory: backend
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    env:
+      # The build only needs these to exist; no backend is running here.
+      NEXTAUTH_SECRET: ci-nextauth-secret-value
+      NEXTAUTH_URL: http://localhost:3000
+      API_GATEWAY_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: frontend
+      - name: Test
+        run: npm test
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+  ai-backend:
+    name: AI backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hustl
+          POSTGRES_PASSWORD: hustl
+          POSTGRES_DB: hustl_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hustl" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://hustl:hustl@localhost:5432/hustl_test
+      TEST_DATABASE_URL: postgresql://hustl:hustl@localhost:5432/hustl_test
+      # torch is too heavy for CI; the hashing encoder is deterministic and exercises the same paths.
+      EMBEDDING_BACKEND: hashing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-backend/requirements-dev.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: pip install -r requirements-dev.txt
+        working-directory: ai-backend
+      - name: Apply the public schema the AI service reads
+        run: |
+          npm ci
+          npm run db:migrate
+        working-directory: backend
+      - name: Apply the ai schema
+        run: python -m app.db.migrate
+        working-directory: ai-backend
+      - name: Test
+        run: python -m pytest -q
+        working-directory: ai-backend

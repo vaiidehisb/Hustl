@@ -63,11 +63,15 @@ export type ParseBriefRequest = z.infer<typeof parseBriefRequest>
 
 export const briefIdParams = z.object({ id: z.string().uuid() })
 
+export const OPEN_BRIEF_SORTS = ["newest", "budget", "deadline"] as const
+export type OpenBriefSort = (typeof OPEN_BRIEF_SORTS)[number]
+
 export const openBriefsQuery = z.object({
   niche: z.string().trim().max(60).optional(),
   platform: z.enum(SOCIAL_PLATFORMS).optional(),
   minBudget: z.coerce.number().int().min(0).optional(),
   q: z.string().trim().max(200).optional(),
+  sort: z.enum(OPEN_BRIEF_SORTS).default("newest"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })

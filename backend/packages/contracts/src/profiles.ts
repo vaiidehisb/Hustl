@@ -255,6 +255,8 @@ export type BrandPublicProfile = {
   size: string
   verified: boolean
   openBriefs: number
+  /** The live briefs themselves, so a creator can apply straight from the profile. */
+  liveBriefs: { id: string; title: string; niche: string; budgetPerCreator: number; deadline: string | null; publishedAt: string | null }[]
   completedDeals: number
   reviewStats: ReviewStats
   reviews: PublicReview[]

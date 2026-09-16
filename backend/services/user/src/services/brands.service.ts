@@ -33,8 +33,15 @@ export async function getPublicBrandProfile(slug: string): Promise<BrandPublicPr
     include: { user: { select: { createdAt: true } } },
   })
   if (!b) throw errors.notFound("Brand")
-  const [openBriefs, completedDeals, reviews] = await Promise.all([
-    prisma.brief.count({ where: { brandId: b.id, status: "PUBLISHED", visibility: "OPEN", deletedAt: null } }),
+  const liveBriefWhere = { brandId: b.id, status: "PUBLISHED", visibility: "OPEN", deletedAt: null } as const
+  const [openBriefs, liveBriefs, completedDeals, reviews] = await Promise.all([
+    prisma.brief.count({ where: liveBriefWhere }),
+    prisma.brief.findMany({
+      where: liveBriefWhere,
+      orderBy: { publishedAt: "desc" },
+      take: 10,
+      select: { id: true, title: true, niche: true, budgetPerCreator: true, deadline: true, publishedAt: true },
+    }),
     prisma.deal.count({ where: { brandId: b.id, status: "COMPLETED" } }),
     reviewsReceivedBy(b.userId),
   ])
@@ -50,6 +57,7 @@ export async function getPublicBrandProfile(slug: string): Promise<BrandPublicPr
     size: b.size,
     verified: !!b.verifiedAt,
     openBriefs,
+    liveBriefs: liveBriefs.map((brief) => ({ ...brief, deadline: brief.deadline?.toISOString() ?? null, publishedAt: brief.publishedAt?.toISOString() ?? null })),
     completedDeals,
     ...reviews,
     memberSince: b.user.createdAt.toISOString(),

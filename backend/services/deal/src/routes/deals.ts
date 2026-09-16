@@ -22,7 +22,7 @@ import { myApplications, persistScore, setApplicationStatus, withdrawApplication
 import { embedBrief } from "../services/briefs"
 import { createReview, dealDetail, getContract, internalDeal, listDeals, participants } from "../services/deals"
 import { raiseDispute } from "../services/disputes"
-import { approveMilestone, requestRevision, retryRelease, submitMilestone } from "../services/milestones"
+import { approveMilestone, requestRevision, retryRelease, retryReleaseAsParty, submitMilestone } from "../services/milestones"
 import { acceptOffer, cancelDeal, counterOffer, createOffer, declineOffer, signContract } from "../services/offers"
 
 export async function applicationRoutes(app: FastifyInstance) {
@@ -121,6 +121,13 @@ export async function dealRoutes(app: FastifyInstance) {
   app.post("/deals/:id/milestones/:mid/request-revision", auth, async (req) => {
     const { id, mid } = parse(milestoneParams, req.params)
     await requestRevision(req.user!, id, mid, parse(requestRevisionRequest, req.body))
+    return ok(await dealDetail(req.user!, id))
+  })
+
+  // The UI offers RETRY_RELEASE when a milestone is APPROVED but the payout call failed.
+  app.post("/deals/:id/milestones/:mid/retry-release", auth, async (req) => {
+    const { id, mid } = parse(milestoneParams, req.params)
+    await retryReleaseAsParty(req.user!, id, mid)
     return ok(await dealDetail(req.user!, id))
   })
 

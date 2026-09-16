@@ -166,6 +166,13 @@ export async function getBrief(user: AuthUser | undefined, id: string) {
   return toBriefDTO(user?.role === "ADMIN" ? brief : (rest as typeof brief), mine ? { myApplication: mine.get(brief.id) ?? null } : {})
 }
 
+/** Marketplace ordering. Briefs without a deadline sort last on "deadline". */
+function openBriefOrder(sort: OpenBriefsQuery["sort"]): Prisma.BriefOrderByWithRelationInput[] {
+  if (sort === "budget") return [{ budgetPerCreator: "desc" }, { id: "asc" }]
+  if (sort === "deadline") return [{ deadline: { sort: "asc", nulls: "last" } }, { id: "asc" }]
+  return [{ publishedAt: "desc" }, { id: "asc" }]
+}
+
 export async function openBriefs(user: AuthUser | undefined, q: OpenBriefsQuery) {
   const and: Prisma.BriefWhereInput[] = [{ OR: [{ deadline: null }, { deadline: { gt: new Date() } }] }]
   if (q.q) and.push({ OR: [{ title: { contains: q.q, mode: "insensitive" } }, { description: { contains: q.q, mode: "insensitive" } }, { brand: { companyName: { contains: q.q, mode: "insensitive" } } }] })
@@ -182,7 +189,7 @@ export async function openBriefs(user: AuthUser | undefined, q: OpenBriefsQuery)
     prisma.brief.findMany({
       where,
       include: { brand: { select: brandPublicSelect }, _count: { select: { applications: { where: { status: { not: "WITHDRAWN" } } } } } },
-      orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+      orderBy: openBriefOrder(q.sort),
       skip: (q.page - 1) * q.pageSize,
       take: q.pageSize,
     }),

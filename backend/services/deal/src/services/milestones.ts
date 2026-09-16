@@ -4,7 +4,7 @@ import { prisma, type Prisma } from "@hustl/db"
 import { assertMilestoneTransition, SETTLED_MILESTONE_STATUSES, type Actor } from "../domain/deal-machine"
 import { isOnTime } from "../domain/rules"
 import { paymentClient } from "../lib/clients"
-import { lockDeal, partiesPayload, recordDealEvent, requireParty, transitionDeal, type DealWithParties, type Tx } from "../lib/deal-access"
+import { dealWithParties, lockDeal, partiesPayload, recordDealEvent, requireParty, transitionDeal, type DealWithParties, type Tx } from "../lib/deal-access"
 import { recomputeCreatorStats } from "./stats"
 
 const log = createLogger("deal-service:milestones")
@@ -98,6 +98,14 @@ export async function releaseViaPayment(dealId: string, mid: string, actorId: st
   // Apply now for a synchronous response; the milestone.payment_released consumer is idempotent.
   await applyMilestoneSettlement({ dealId, milestoneId: mid, kind: "RELEASE", payoutId: res.payout.id, gross: res.payout.gross, net: res.payout.net })
   return { payoutId: res.payout.id, status: res.payout.status, net: res.payout.net, alreadyReleased: res.alreadyReleased }
+}
+
+/** Brand-facing retry of a payout that failed after approval (UI action RETRY_RELEASE). */
+export async function retryReleaseAsParty(user: AuthUser, dealId: string, mid: string) {
+  const deal = await prisma.deal.findUnique({ where: { id: dealId }, include: dealWithParties })
+  if (!deal) throw errors.notFound("Deal")
+  if (requireParty(deal, user) !== "BRAND") throw errors.forbidden("Only the brand can release a payment")
+  return retryRelease(dealId, mid)
 }
 
 export async function retryRelease(dealId: string, mid: string) {

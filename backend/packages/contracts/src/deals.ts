@@ -171,10 +171,25 @@ export type DealPartySummary = {
   creator: { id: string; handle: string; name: string; avatarUrl: string | null; verified: boolean }
 }
 
+/** Milestone roll-up carried on every deal summary, so lists never need to fetch each deal. */
+export type DealMilestoneRollup = {
+  total: number
+  released: number
+  /** Submitted and waiting for the brand to review. */
+  awaitingReview: number
+  revisionRequested: number
+  /** The milestone the parties are working on next, if any. */
+  next: { id: string; title: string; status: MilestoneStatus; amount: number; dueDate: string | null } | null
+}
+
 export type DealSummary = DealPartySummary & {
   id: string
   title: string
   status: DealStatus
+  /** What the caller can do right now — the same list the deal room uses. */
+  allowedActions: DealUiAction[]
+  counterRoundsRemaining: number
+  milestoneRollup: DealMilestoneRollup
   amount: number
   currency: string
   paymentMode: PaymentMode

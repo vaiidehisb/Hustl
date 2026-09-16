@@ -32,7 +32,7 @@ export async function listDeals(user: AuthUser, q: ListDealsQuery) {
     prisma.deal.findMany({ where, include: dealSummaryInclude, orderBy: { updatedAt: "desc" }, skip: (q.page - 1) * q.pageSize, take: q.pageSize }),
     prisma.deal.count({ where }),
   ])
-  return { items: rows.map((d) => toDealSummary(d, scope ? (as === "brand" ? "BRAND" : "CREATOR") : "ADMIN")), meta: pageMeta(q, total) }
+  return { items: rows.map((d) => toDealSummary(d, scope ? (as === "brand" ? "BRAND" : "CREATOR") : "ADMIN", user.id)), meta: pageMeta(q, total) }
 }
 
 export async function getContract(user: AuthUser, dealId: string) {

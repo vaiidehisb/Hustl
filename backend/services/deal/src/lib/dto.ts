@@ -9,10 +9,12 @@ import type {
   DealDetail,
   DealEventDTO,
   DealOfferDTO,
+  DealMilestoneRollup,
   DealSummary,
   DealUiAction,
   MilestoneDTO,
   MilestoneInput,
+  MilestoneStatus,
   MilestoneUiAction,
   ReviewDTO,
 } from "@hustl/contracts"
@@ -142,17 +144,40 @@ export function toApplicationDTO(
 export const dealSummaryInclude = {
   brand: { select: { ...brandPublicSelect, userId: true } },
   creator: { select: { id: true, handle: true, avatarUrl: true, verifiedAt: true, userId: true, user: { select: { name: true } } } },
+  // Enough context for lists to render actions and progress without a per-deal fetch.
+  contract: { select: { brandSignedAt: true, creatorSignedAt: true } },
+  reviews: { select: { authorId: true } },
+  milestones: { orderBy: { position: "asc" }, select: { id: true, title: true, status: true, amount: true, dueDate: true } },
 } satisfies Prisma.DealInclude
 
 type SummaryParties = {
   brand: { id: string; companyName: string; slug: string; logoUrl: string | null; verifiedAt: Date | null; userId: string }
   creator: { id: string; handle: string; avatarUrl: string | null; verifiedAt: Date | null; userId: string; user: { name: string } }
+  contract: { brandSignedAt: Date | null; creatorSignedAt: Date | null } | null
+  reviews: { authorId: string }[]
+  milestones: { id: string; title: string; status: MilestoneStatus; amount: number; dueDate: Date | null }[]
 }
 
 export type ViewerParty = "BRAND" | "CREATOR" | "ADMIN"
 
-export function toDealSummary(d: Deal & SummaryParties, yourParty: ViewerParty): DealSummary {
+const SETTLED_MILESTONES: MilestoneStatus[] = ["RELEASED", "REFUNDED"]
+
+function milestoneRollup(milestones: SummaryParties["milestones"]): DealMilestoneRollup {
+  const next = milestones.find((m) => !SETTLED_MILESTONES.includes(m.status)) ?? null
   return {
+    total: milestones.length,
+    released: milestones.filter((m) => m.status === "RELEASED").length,
+    awaitingReview: milestones.filter((m) => m.status === "SUBMITTED").length,
+    revisionRequested: milestones.filter((m) => m.status === "REVISION_REQUESTED").length,
+    next: next ? { id: next.id, title: next.title, status: next.status, amount: next.amount, dueDate: iso(next.dueDate) } : null,
+  }
+}
+
+export function toDealSummary(d: Deal & SummaryParties, yourParty: ViewerParty, viewerId?: string): DealSummary {
+  return {
+    allowedActions: dealAllowedActions(d, yourParty, { contract: d.contract, reviewedByViewer: !!viewerId && d.reviews.some((r) => r.authorId === viewerId) }),
+    counterRoundsRemaining: Math.max(0, MAX_COUNTER_ROUNDS - d.negotiationRounds),
+    milestoneRollup: milestoneRollup(d.milestones),
     id: d.id,
     title: d.title,
     status: d.status,
@@ -310,7 +335,7 @@ export function toDealDetail(d: DealDetailRow, party: ViewerParty, viewerId: str
   const feeRates =
     party === "BRAND" ? { brand: d.brandFeeRate, processing: d.processingFeeRate } : party === "CREATOR" ? { creator: d.creatorFeeRate } : { brand: d.brandFeeRate, processing: d.processingFeeRate, creator: d.creatorFeeRate }
   return {
-    ...toDealSummary(d, party),
+    ...toDealSummary(d, party, viewerId),
     deliverables: d.deliverables,
     feeRates,
     offers: d.offers.map(toOfferDTO),
@@ -318,7 +343,5 @@ export function toDealDetail(d: DealDetailRow, party: ViewerParty, viewerId: str
     contract: d.contract ? toContractDTO(d.contract, party) : null,
     events: d.events.map(toEventDTO),
     reviews: d.reviews.map(toReviewDTO),
-    allowedActions: dealAllowedActions(d, party, { contract: d.contract, reviewedByViewer: d.reviews.some((r) => r.authorId === viewerId) }),
-    counterRoundsRemaining: Math.max(0, MAX_COUNTER_ROUNDS - d.negotiationRounds),
   }
 }

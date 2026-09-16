@@ -1,3 +1,26 @@
 node_modules/
 .next/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# env — never commit real secrets
+.env
 .env.local
+.env.*.local
+!.env.example
+
+# local data
+.local/
+*.db
+*.db-journal
+storage/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+mlruns/
+.claude/

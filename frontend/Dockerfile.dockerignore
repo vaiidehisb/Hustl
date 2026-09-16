@@ -1,0 +1,16 @@
+# Paths are relative to the build context (repo root).
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+!frontend/.env.example
+**/*.log
+**/dev.db*
+.git
+ai-backend
+backend/services
+backend/packages/common
+backend/packages/db
+backend/node_modules
+frontend/test
+frontend/coverage

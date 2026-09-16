@@ -1,0 +1,214 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* hustl. design tokens — brand palette from hustlstops.com:
+   lime #C8FF00 on near-black #1F231A, off-white #FAFBF9 ground. */
+:root {
+  --background: #fafbf9;
+  --foreground: #1f231a;
+  --card: #ffffff;
+  --card-foreground: #1f231a;
+  --popover: #ffffff;
+  --popover-foreground: #1f231a;
+  --primary: #c8ff00;
+  --primary-foreground: #1e2702;
+  --secondary: #f0f2ee;
+  --secondary-foreground: #1f231a;
+  --muted: #f0f2ee;
+  --muted-foreground: #666d5f;
+  --accent: #eefbc4;
+  --accent-foreground: #3f5406;
+  /* Lime is too light for text on white — this is the readable brand ink.
+     5.1:1 on the card surface, so links and emphasis pass AA at body sizes. */
+  --brand-ink: #5c7409;
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+  --success: #238b49;
+  --success-soft: #e7f6ec;
+  --warning: #a04a08;
+  --warning-soft: #fdf0dd;
+  --danger-soft: #fdeaee;
+  --border: #e4e7e0;
+  --input: #e4e7e0;
+  --ring: #a9d900;
+  --chart-1: #c8ff00;
+  --chart-2: #708e0b;
+  --chart-3: #238b49;
+  --chart-4: #b45309;
+  --chart-5: #1f231a;
+  --radius: 0.75rem;
+  --sidebar: #f6f8f3;
+  --sidebar-foreground: #2c3126;
+  --sidebar-primary: #c8ff00;
+  --sidebar-primary-foreground: #1e2702;
+  --sidebar-accent: #e8f4c6;
+  --sidebar-accent-foreground: #1f231a;
+  --sidebar-border: #e4e7e0;
+  --sidebar-ring: #a9d900;
+}
+
+.dark {
+  --background: #0b0d07;
+  --foreground: #f3f6ec;
+  --card: #14170f;
+  --card-foreground: #f3f6ec;
+  --popover: #171a12;
+  --popover-foreground: #f3f6ec;
+  --primary: #c8ff00;
+  --primary-foreground: #10150a;
+  --secondary: #1d2117;
+  --secondary-foreground: #f3f6ec;
+  --muted: #1d2117;
+  --muted-foreground: #a2a999;
+  --accent: #263010;
+  --accent-foreground: #c8ff00;
+  --brand-ink: #c8ff00;
+  --destructive: #fb7185;
+  --destructive-foreground: #1a0a0e;
+  --success: #4ade80;
+  --success-soft: #16301f;
+  --warning: #fbbf24;
+  --warning-soft: #302615;
+  --danger-soft: #331219;
+  --border: #272c1e;
+  --input: #2f3524;
+  --ring: #c8ff00;
+  --chart-1: #c8ff00;
+  --chart-2: #a3e635;
+  --chart-3: #4ade80;
+  --chart-4: #fbbf24;
+  --chart-5: #e2e8d5;
+  --sidebar: #0f1209;
+  --sidebar-foreground: #dfe4d4;
+  --sidebar-primary: #c8ff00;
+  --sidebar-primary-foreground: #10150a;
+  --sidebar-accent: #222a12;
+  --sidebar-accent-foreground: #f3f6ec;
+  --sidebar-border: #242a1c;
+  --sidebar-ring: #c8ff00;
+}
+
+@theme inline {
+  --font-sans: var(--font-poppins);
+  --font-display: var(--font-poppins);
+  --font-serif: var(--font-poppins);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger-soft: var(--danger-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  /* A bare `grid` (columns only from a breakpoint up) creates one implicit
+     auto column that sizes to its widest child, which overflows and clips on
+     phones. Bound implicit tracks to the container instead. */
+  .grid:not([class*="grid-flow-col"]) {
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-poppins), system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  /* Lime reads poorly as text on white, so the gradient runs lime → brand ink. */
+  .text-gradient {
+    background: linear-gradient(100deg, #8fb00c, #4f6b08);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .dark .text-gradient {
+    background: linear-gradient(100deg, #c8ff00, #86b800);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-brand-gradient {
+    background: linear-gradient(135deg, #c8ff00, #a3e635);
+    color: #1e2702;
+  }
+  .bg-ink-gradient {
+    background: linear-gradient(135deg, #1f231a, #0b0d07);
+    color: #f3f6ec;
+  }
+  /* Brand lime fails contrast as text on light surfaces. `text-primary` therefore
+     resolves to the darker brand ink in light mode and to lime in dark mode,
+     while bg-primary / border-primary stay true lime. */
+  .text-primary {
+    color: var(--brand-ink);
+  }
+  .bg-grid {
+    background-image: linear-gradient(to right, var(--border) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-marquee { animation: marquee 40s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float, .animate-marquee { animation: none; }
+}

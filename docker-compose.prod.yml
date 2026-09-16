@@ -1,0 +1,24 @@
+# Production overrides. Managed Postgres/Redis/Kafka/Elasticsearch are expected
+# in production — point the *_URL variables at them in .env and don't run the
+# local infrastructure containers:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d gateway user deal payment creator-data search notification analytics media ai-backend ai-worker frontend
+
+x-prod: &prod
+  restart: always
+  environment:
+    NODE_ENV: production
+    LOG_LEVEL: info
+
+services:
+  gateway: { <<: *prod, environment: { NODE_ENV: production, PORT: 4000 } }
+  user: { <<: *prod, environment: { NODE_ENV: production, PORT: 4001 } }
+  deal: { <<: *prod, environment: { NODE_ENV: production, PORT: 4002 } }
+  payment: { <<: *prod, environment: { NODE_ENV: production, PORT: 4003, PAYMENTS_PROVIDER: razorpay } }
+  creator-data: { <<: *prod, environment: { NODE_ENV: production, PORT: 4004 } }
+  search: { <<: *prod, environment: { NODE_ENV: production, PORT: 4005 } }
+  notification: { <<: *prod, environment: { NODE_ENV: production, PORT: 4006 } }
+  analytics: { <<: *prod, environment: { NODE_ENV: production, PORT: 4007 } }
+  media: { <<: *prod, environment: { NODE_ENV: production, PORT: 4008, STORAGE_DRIVER: s3 }, volumes: [] }
+  ai-backend: { restart: always, environment: { APP_ENV: production } }
+  ai-worker: { restart: always, environment: { APP_ENV: production } }
+  frontend: { restart: always, environment: { NODE_ENV: production } }

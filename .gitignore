@@ -15,7 +15,7 @@ next-env.d.ts
 .local/
 *.db
 *.db-journal
-storage/
+/storage/
 
 # python
 __pycache__/

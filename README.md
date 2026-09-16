@@ -50,6 +50,7 @@ cp frontend/.env.example frontend/.env.local
 cp ai-backend/.env.example ai-backend/.env
 
 # 3. database
+npm run db:start                         # local PostgreSQL on :5433 (optional — skip if you have your own)
 npm --prefix backend run db:migrate      # Prisma migrations (public schema)
 python -m app.db.migrate                 # AI schema, run from ai-backend/
 
@@ -90,6 +91,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 | `npm --prefix backend run test` | backend test suite |
 | `npm --prefix backend run test:e2e` | full deal lifecycle through the running gateway |
 | `npm --prefix backend run db:migrate` / `db:migrate:dev` | apply / create migrations |
+| `npm run db:start` / `db:stop` / `db:status` | a throwaway local PostgreSQL cluster on :5433 (trust auth, no password) for development |
 | `npm --prefix frontend run dev` / `build` / `start` / `test` | the Next.js app |
 | `cd ai-backend && python -m pytest -q` | AI backend tests |
 | `cd ai-backend && celery -A app.workers.celery_app worker` | AI batch jobs (needs `REDIS_URL`) |

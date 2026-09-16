@@ -33,7 +33,10 @@
     "db:migrate": "npm --prefix backend run db:migrate && cd ai-backend && python -m app.db.migrate",
     "test": "npm --prefix backend run test && npm --prefix frontend run test && cd ai-backend && python -m pytest -q",
     "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "db:start": "node scripts/local-db.mjs start",
+    "db:stop": "node scripts/local-db.mjs stop",
+    "db:status": "node scripts/local-db.mjs status"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

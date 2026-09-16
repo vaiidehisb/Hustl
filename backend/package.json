@@ -32,7 +32,9 @@
     "test": "vitest run",
     "db:generate": "npm run generate -w @hustl/db",
     "db:migrate": "npm run migrate:deploy -w @hustl/db",
-    "db:migrate:dev": "npm run migrate:dev -w @hustl/db"
+    "db:migrate:dev": "npm run migrate:dev -w @hustl/db",
+    "admin:create": "npm run admin:create -w @hustl/user-service --",
+    "test:e2e": "node scripts/e2e-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

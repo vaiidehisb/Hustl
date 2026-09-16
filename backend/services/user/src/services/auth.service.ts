@@ -86,7 +86,15 @@ export async function login(input: LoginRequest, ctx: ClientContext): Promise<Au
 
 class RefreshTokenReuse extends Error {}
 
-/** Single-use rotation. Presenting an already-revoked token means it leaked: every session of that user is revoked. */
+/**
+ * Browsers often fire two refreshes with the same token at once (parallel
+ * requests, middleware + page). A token rotated moments ago is therefore
+ * accepted again inside this window instead of being treated as stolen.
+ */
+export const REFRESH_ROTATION_GRACE_MS = 30_000
+const withinGrace = (rotatedAt: Date | null) => !!rotatedAt && Date.now() - rotatedAt.getTime() < REFRESH_ROTATION_GRACE_MS
+
+/** Single-use rotation. Presenting an already-revoked token (outside the grace window) means it leaked: every session of that user is revoked. */
 export async function refresh(refreshToken: string, ctx: ClientContext): Promise<AuthSession> {
   const row = await prisma.refreshToken.findUnique({ where: { tokenHash: hashToken(refreshToken) }, include: { user: true } })
   if (!row) throw errors.unauthorized("Invalid refresh token")
@@ -95,7 +103,12 @@ export async function refresh(refreshToken: string, ctx: ClientContext): Promise
     await revokeAllRefreshTokens(row.userId)
     return errors.unauthorized("Refresh token was already used; all sessions have been signed out")
   }
-  if (row.revokedAt) throw await reuseDetected()
+  const graceSession = () => prisma.$transaction((tx) => issueSession(tx, row.user, ctx))
+  const usable = !row.user.deletedAt && row.user.status !== "SUSPENDED"
+  if (row.revokedAt) {
+    if (usable && withinGrace(row.rotatedAt)) return graceSession()
+    throw await reuseDetected()
+  }
   if (row.expiresAt.getTime() <= Date.now()) throw errors.unauthorized("Refresh token expired")
   if (row.user.deletedAt) {
     await revokeAllRefreshTokens(row.userId)
@@ -109,12 +122,18 @@ export async function refresh(refreshToken: string, ctx: ClientContext): Promise
   try {
     return await prisma.$transaction(async (tx) => {
       // Conditional update: of two concurrent refreshes with the same token only one can win.
-      const { count } = await tx.refreshToken.updateMany({ where: { id: row.id, revokedAt: null }, data: { revokedAt: new Date() } })
+      const now = new Date()
+      const { count } = await tx.refreshToken.updateMany({ where: { id: row.id, revokedAt: null }, data: { revokedAt: now, rotatedAt: now } })
       if (count !== 1) throw new RefreshTokenReuse()
       return issueSession(tx, row.user, ctx)
     })
   } catch (err) {
-    if (err instanceof RefreshTokenReuse) throw await reuseDetected()
+    if (err instanceof RefreshTokenReuse) {
+      // Lost a race with a concurrent refresh of the same token: fine if that one was a rotation just now.
+      const current = await prisma.refreshToken.findUnique({ where: { id: row.id }, select: { rotatedAt: true } })
+      if (usable && withinGrace(current?.rotatedAt ?? null)) return graceSession()
+      throw await reuseDetected()
+    }
     throw err
   }
 }

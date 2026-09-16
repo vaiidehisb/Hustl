@@ -89,7 +89,8 @@ const application = await call("POST", `/briefs/${briefId}/applications`, { pitc
 console.log(`  application score: ${application.data.matchScore} ${JSON.stringify(application.data.matchReasons)} (${application.meta?.aiScoring})`)
 await call("PATCH", `/applications/${application.data.id}/status`, { status: "SHORTLISTED" }, B)
 const matches = await call("GET", `/briefs/${briefId}/matches`, null, B, { allowFail: true })
-console.log(`  AI matches: ${matches ? (matches.data.items ?? matches.data).length : "unavailable"}`)
+const matchList = matches && (Array.isArray(matches.data) ? matches.data : (matches.data.matches ?? matches.data.items ?? []))
+console.log(`  AI matches: ${matchList ? `${matchList.length} (top score ${matchList[0]?.matchScore ?? matchList[0]?.match_score ?? "—"})` : "unavailable"}`)
 const search = await call("GET", `/search/creators?niche=beauty`, null, B)
 console.log(`  search engine: ${search.meta?.engine}, results: ${(search.data.items ?? search.data).length}`)
 

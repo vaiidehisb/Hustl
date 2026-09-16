@@ -138,7 +138,15 @@ describe("refresh tokens", () => {
     expect(rotated.refreshToken).not.toBe(s.refreshToken)
     expect(rotated.accessToken).toBeTruthy()
 
-    // Replay of the already-rotated token → reuse detected.
+    // A concurrent/duplicate refresh within the grace window is accepted (browser races).
+    const racing = await post("/auth/refresh", { refreshToken: s.refreshToken })
+    expect(racing.statusCode).toBe(200)
+
+    // Outside the grace window, replaying the rotated token → reuse detected.
+    await prisma.refreshToken.updateMany({
+      where: { tokenHash: createHash("sha256").update(s.refreshToken).digest("hex") },
+      data: { rotatedAt: new Date(Date.now() - 60_000) },
+    })
     const replay = await post("/auth/refresh", { refreshToken: s.refreshToken })
     expect(replay.statusCode).toBe(401)
 
@@ -155,10 +163,15 @@ describe("refresh tokens", () => {
     expect((await post("/auth/refresh", { refreshToken: s.refreshToken })).statusCode).toBe(401)
   })
 
-  it("only lets one of two concurrent refreshes with the same token succeed", async () => {
+  it("lets two concurrent refreshes with the same token both succeed (rotation grace window)", async () => {
     const s = await registerCreator(app)
     const results = await Promise.all([post("/auth/refresh", { refreshToken: s.refreshToken }), post("/auth/refresh", { refreshToken: s.refreshToken })])
-    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401])
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200])
+    // Each caller gets its own usable session; the presented token is rotated away.
+    const tokens = results.map((r) => r.json().data.refreshToken)
+    expect(new Set(tokens).size).toBe(2)
+    expect(tokens).not.toContain(s.refreshToken)
+    expect(await prisma.refreshToken.count({ where: { userId: s.user.id, revokedAt: null } })).toBe(2)
   })
 
   it("logout revokes the token", async () => {

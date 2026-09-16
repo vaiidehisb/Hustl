@@ -6,7 +6,8 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "build": "tsup",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "admin:create": "tsx --env-file-if-exists=../../.env scripts/create-admin.ts"
   },
   "dependencies": {
     "@hustl/common": "*",
@@ -17,5 +18,7 @@
     "fastify": "^5.2.0",
     "google-auth-library": "^9.15.0"
   },
-  "devDependencies": { "@types/bcryptjs": "^2.4.6" }
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6"
+  }
 }

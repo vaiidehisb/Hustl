@@ -270,6 +270,8 @@ model RefreshToken {
   ip        String?
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
+  /// Set when revoked by rotation (not logout) — enables a short grace window for concurrent refreshes.
+  rotatedAt DateTime? @map("rotated_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@index([userId])

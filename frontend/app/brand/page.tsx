@@ -12,7 +12,7 @@ import { looksActionable, monthLabel } from "@/components/brand/helpers"
 import { compact, inr, timeAgo } from "@/lib/format"
 import { requireRole } from "@/lib/auth/session"
 
-export const metadata = { title: "Dashboard · hustl." }
+export const metadata = { title: "Dashboard" }
 
 type QueueItem = { key: string; href: string; icon: typeof Inbox; title: string; detail: string; cta: string; at: string; tone: "warning" | "brand" | "info" }
 

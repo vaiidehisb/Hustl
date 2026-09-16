@@ -1,22 +1,22 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Manrope } from "next/font/google"
+import { Poppins } from "next/font/google"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 
-const geist = Geist({ subsets: ["latin"], display: "swap", variable: "--font-geist" })
-const manrope = Manrope({ subsets: ["latin"], display: "swap", variable: "--font-manrope" })
+// Poppins is the hustl. brand typeface (hustlstops.com).
+const poppins = Poppins({ subsets: ["latin"], display: "swap", weight: ["400", "500", "600", "700", "800", "900"], variable: "--font-poppins" })
 
 export const metadata: Metadata = {
   title: { default: "hustl. — Brand deals, secured. Payments, guaranteed.", template: "%s · hustl." },
   description:
     "The creator–brand marketplace with escrow-protected payments, AI creator matching and a structured deal workflow from brief to payout.",
-  icons: { icon: "/LOGO.png" },
+  icons: { icon: "/logo-mark.jpg", apple: "/logo-mark.jpg" },
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable} ${manrope.variable} antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${poppins.variable} antialiased`} suppressHydrationWarning>
       <body className="font-sans">
         <Providers>{children}</Providers>
       </body>

@@ -22,7 +22,7 @@ const COLUMNS: { status: ApplicationStatus; title: string; empty: string }[] = [
   { status: "REJECTED", title: "Not selected", empty: "Nobody passed on yet." },
 ]
 
-export const metadata = { title: "Brief · hustl." }
+export const metadata = { title: "Brief" }
 
 export default async function BriefDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const [{ id }, { tab: rawTab }] = await Promise.all([params, searchParams])

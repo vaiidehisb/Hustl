@@ -9,7 +9,7 @@ import { ACTIVE_DEAL_STATUSES, isInboundOffer, paymentModeLabel } from "@/compon
 import { inr, shortDate, timeAgo } from "@/lib/format"
 import { getDealDetails, getMyDeals, load } from "../data"
 
-export const metadata = { title: "Offers & deals · hustl." }
+export const metadata = { title: "Offers & deals" }
 
 export default async function DealsPage() {
   const result = await load(() => getMyDeals({ pageSize: 100 }))

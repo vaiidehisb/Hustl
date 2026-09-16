@@ -161,13 +161,14 @@ export function ScoreRing({ score, size = 44, label: l }: { score: number; size?
   )
 }
 
+// Initials fall back to brand-adjacent gradients: lime through olive into ink.
 const AVATAR_GRADIENTS = [
-  "from-blue-500 to-cyan-400",
-  "from-violet-500 to-fuchsia-400",
-  "from-emerald-500 to-teal-400",
-  "from-orange-500 to-amber-400",
-  "from-rose-500 to-pink-400",
-  "from-indigo-500 to-sky-400",
+  "from-lime-300 to-lime-500 text-lime-950",
+  "from-lime-400 to-emerald-500 text-lime-950",
+  "from-stone-700 to-stone-900 text-lime-200",
+  "from-lime-200 to-yellow-400 text-lime-950",
+  "from-emerald-600 to-lime-500 text-lime-950",
+  "from-zinc-800 to-lime-700 text-lime-100",
 ]
 
 export function Avatar({ name, src, size = 40, className }: { name: string; src?: string | null; size?: number; className?: string }) {
@@ -177,7 +178,7 @@ export function Avatar({ name, src, size = 40, className }: { name: string; src?
     <img src={src} alt={name} width={size} height={size} className={cn("shrink-0 rounded-full object-cover", className)} style={{ width: size, height: size }} />
   ) : (
     <span
-      className={cn("grid shrink-0 place-items-center rounded-full bg-gradient-to-br font-semibold text-white", g, className)}
+      className={cn("grid shrink-0 place-items-center rounded-full bg-gradient-to-br font-semibold", g, className)}
       style={{ width: size, height: size, fontSize: size * 0.36 }}
       aria-label={name}
     >

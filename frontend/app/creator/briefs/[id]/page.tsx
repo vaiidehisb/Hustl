@@ -11,7 +11,7 @@ import { canWithdraw, deadlineLabel, nicheLabel, platformLabel } from "@/compone
 import { compact, inr, pct, shortDate, timeAgo } from "@/lib/format"
 import { getBrandProfile, getBrief, getBriefFit, getMyApplications, load, soft, type BriefFit } from "../../data"
 
-export const metadata = { title: "Brief · hustl." }
+export const metadata = { title: "Brief" }
 
 const STATUS_COPY: Record<string, string> = {
   APPLIED: "The brand has your pitch. You'll be notified the moment they shortlist you, send an offer or close the brief.",

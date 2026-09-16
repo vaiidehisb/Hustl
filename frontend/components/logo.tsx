@@ -2,42 +2,36 @@
 
 import { motion } from "framer-motion"
 import Image from "next/image"
+import { cn } from "@/lib/utils"
+import { brandMark } from "@/components/marketing/portal"
+
+const SIZES = { sm: 24, md: 32, lg: 48 } as const
 
 interface LogoProps {
   className?: string
-  size?: "sm" | "md" | "lg"
+  size?: keyof typeof SIZES
   animated?: boolean
 }
 
-export function Logo({ className = "", size = "md", animated = false }: LogoProps) {
-  const sizeClasses = {
-    sm: "h-6 w-6",
-    md: "h-8 w-8", 
-    lg: "h-12 w-12"
-  }
-
-  const LogoComponent = (
+/** The hustl. mark — lime "H." on black. */
+export function Logo({ className, size = "md", animated = false }: LogoProps) {
+  const px = SIZES[size]
+  const mark = (
     <Image
-      src="/LOGO.png"
-      alt="Hustl Logo"
-      width={size === "sm" ? 24 : size === "md" ? 32 : 48}
-      height={size === "sm" ? 24 : size === "md" ? 32 : 48}
-      className={`${sizeClasses[size]} ${className} object-contain`}
+      src={brandMark}
+      alt="hustl."
+      width={px}
+      height={px}
       priority={size === "lg"}
+      className={cn("rounded-[22%] object-contain", className)}
+      style={{ width: px, height: px }}
     />
   )
-
-  if (animated) {
-    return (
-      <motion.div
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        transition={{ duration: 0.2 }}
-      >
-        {LogoComponent}
-      </motion.div>
-    )
-  }
-
-  return LogoComponent
-} 
+  return animated ? (
+    <motion.span whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.95 }} transition={{ duration: 0.2 }} className="inline-flex">
+      {mark}
+    </motion.span>
+  ) : (
+    mark
+  )
+}

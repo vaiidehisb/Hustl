@@ -264,7 +264,7 @@ function OfferForm({
         )}
         <div className={cn("space-y-1.5", allBriefs.length === 0 && "sm:col-span-2")}>
           <Label htmlFor="offer-amount">Deal value (₹)</Label>
-          <Input id="offer-amount" type="number" inputMode="numeric" min={MIN_DEAL_AMOUNT} step={500} placeholder="25000" aria-invalid={!!formState.errors.amount} {...register("amount")} />
+          <Input id="offer-amount" type="number" inputMode="numeric" min={MIN_DEAL_AMOUNT} step={1} placeholder="25000" aria-invalid={!!formState.errors.amount} {...register("amount")} />
           <FieldError message={formState.errors.amount?.message} />
         </div>
       </div>

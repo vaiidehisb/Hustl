@@ -10,7 +10,7 @@ import { loadBriefs, loadMatches, loadMe, loadSaved, loadSearch, type Serialized
 import { cap } from "@/components/brand/helpers"
 import { compact, inr, pct } from "@/lib/format"
 
-export const metadata = { title: "Discover creators · hustl." }
+export const metadata = { title: "Discover creators" }
 
 type Row = {
   id: string

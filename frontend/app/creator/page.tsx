@@ -11,7 +11,7 @@ import type { Tone } from "@/lib/deals/machine"
 import { inr, timeAgo } from "@/lib/format"
 import { getBriefFit, getCreatorOverview, getDealDetails, getMe, getMyDeals, getOpenBriefs, load, soft, type BriefFit } from "./data"
 
-export const metadata = { title: "Dashboard · hustl." }
+export const metadata = { title: "Dashboard" }
 
 type Move = { id: string; href: string; icon: LucideIcon; tag: string; tone: Tone; title: string; detail: string; priority: number; due: number }
 

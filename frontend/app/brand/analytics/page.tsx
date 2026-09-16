@@ -8,7 +8,7 @@ import { loadCampaigns, loadOverview } from "@/components/brand/data"
 import { monthLabel, statusLabel } from "@/components/brand/helpers"
 import { inr, shortDate } from "@/lib/format"
 
-export const metadata = { title: "Analytics · hustl." }
+export const metadata = { title: "Analytics" }
 
 const STATUS_COLOR: Record<string, string> = {
   OFFER_SENT: "var(--chart-2)",

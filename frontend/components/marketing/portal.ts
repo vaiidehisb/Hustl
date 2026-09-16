@@ -2,4 +2,4 @@
 export const portalPath = (role: string | null | undefined) =>
   role === "BRAND" ? "/brand" : role === "CREATOR" ? "/creator" : role === "ADMIN" ? "/admin" : "/onboarding"
 
-export const brandMark = "/LOGO.png"
+export const brandMark = "/logo-mark.jpg"

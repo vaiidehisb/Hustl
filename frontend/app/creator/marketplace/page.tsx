@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/creator/states"
 import { SOCIAL_PLATFORMS } from "@/components/creator/lib"
 import { getBriefFit, getOpenBriefs, load, soft } from "../data"
 
-export const metadata = { title: "Brand marketplace · hustl." }
+export const metadata = { title: "Brand marketplace" }
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 

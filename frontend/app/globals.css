@@ -3,92 +3,96 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* hustl. design tokens — ink + electric blue (from the logo mark). */
+/* hustl. design tokens — brand palette from hustlstops.com:
+   lime #C8FF00 on near-black #1F231A, off-white #FAFBF9 ground. */
 :root {
-  --background: oklch(0.992 0.002 260);
-  --foreground: oklch(0.21 0.03 265);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.03 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.03 265);
-  --primary: oklch(0.57 0.21 259);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.965 0.006 260);
-  --secondary-foreground: oklch(0.25 0.03 265);
-  --muted: oklch(0.965 0.006 260);
-  --muted-foreground: oklch(0.5 0.02 262);
-  --accent: oklch(0.955 0.025 255);
-  --accent-foreground: oklch(0.42 0.16 259);
-  --destructive: oklch(0.58 0.22 27);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.14 158);
-  --success-soft: oklch(0.96 0.04 160);
-  --warning: oklch(0.68 0.15 65);
-  --warning-soft: oklch(0.97 0.05 85);
-  --danger-soft: oklch(0.96 0.03 25);
-  --border: oklch(0.915 0.008 262);
-  --input: oklch(0.915 0.008 262);
-  --ring: oklch(0.57 0.21 259);
-  --chart-1: oklch(0.57 0.21 259);
-  --chart-2: oklch(0.72 0.14 200);
-  --chart-3: oklch(0.6 0.14 158);
-  --chart-4: oklch(0.68 0.15 65);
-  --chart-5: oklch(0.6 0.2 300);
+  --background: #fafbf9;
+  --foreground: #1f231a;
+  --card: #ffffff;
+  --card-foreground: #1f231a;
+  --popover: #ffffff;
+  --popover-foreground: #1f231a;
+  --primary: #c8ff00;
+  --primary-foreground: #1e2702;
+  --secondary: #f0f2ee;
+  --secondary-foreground: #1f231a;
+  --muted: #f0f2ee;
+  --muted-foreground: #666d5f;
+  --accent: #eefbc4;
+  --accent-foreground: #3f5406;
+  /* Lime is too light for text on white — this is the readable brand ink. */
+  --brand-ink: #708e0b;
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+  --success: #238b49;
+  --success-soft: #e7f6ec;
+  --warning: #b45309;
+  --warning-soft: #fdf0dd;
+  --danger-soft: #fdeaee;
+  --border: #e4e7e0;
+  --input: #e4e7e0;
+  --ring: #a9d900;
+  --chart-1: #c8ff00;
+  --chart-2: #708e0b;
+  --chart-3: #238b49;
+  --chart-4: #b45309;
+  --chart-5: #1f231a;
   --radius: 0.75rem;
-  --sidebar: oklch(0.985 0.003 260);
-  --sidebar-foreground: oklch(0.3 0.03 265);
-  --sidebar-primary: oklch(0.57 0.21 259);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.955 0.02 258);
-  --sidebar-accent-foreground: oklch(0.21 0.03 265);
-  --sidebar-border: oklch(0.925 0.008 262);
-  --sidebar-ring: oklch(0.57 0.21 259);
+  --sidebar: #f6f8f3;
+  --sidebar-foreground: #2c3126;
+  --sidebar-primary: #c8ff00;
+  --sidebar-primary-foreground: #1e2702;
+  --sidebar-accent: #e8f4c6;
+  --sidebar-accent-foreground: #1f231a;
+  --sidebar-border: #e4e7e0;
+  --sidebar-ring: #a9d900;
 }
 
 .dark {
-  --background: oklch(0.155 0.012 265);
-  --foreground: oklch(0.96 0.005 260);
-  --card: oklch(0.195 0.015 265);
-  --card-foreground: oklch(0.96 0.005 260);
-  --popover: oklch(0.2 0.015 265);
-  --popover-foreground: oklch(0.96 0.005 260);
-  --primary: oklch(0.66 0.18 256);
-  --primary-foreground: oklch(0.14 0.02 265);
-  --secondary: oklch(0.25 0.015 265);
-  --secondary-foreground: oklch(0.94 0.005 260);
-  --muted: oklch(0.24 0.015 265);
-  --muted-foreground: oklch(0.7 0.015 262);
-  --accent: oklch(0.27 0.05 260);
-  --accent-foreground: oklch(0.82 0.1 256);
-  --destructive: oklch(0.64 0.2 27);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.72 0.14 158);
-  --success-soft: oklch(0.28 0.05 160);
-  --warning: oklch(0.8 0.14 75);
-  --warning-soft: oklch(0.3 0.05 75);
-  --danger-soft: oklch(0.3 0.06 25);
-  --border: oklch(0.28 0.015 265);
-  --input: oklch(0.3 0.015 265);
-  --ring: oklch(0.66 0.18 256);
-  --chart-1: oklch(0.66 0.18 256);
-  --chart-2: oklch(0.76 0.12 200);
-  --chart-3: oklch(0.72 0.14 158);
-  --chart-4: oklch(0.8 0.14 75);
-  --chart-5: oklch(0.7 0.17 300);
-  --sidebar: oklch(0.17 0.013 265);
-  --sidebar-foreground: oklch(0.85 0.01 260);
-  --sidebar-primary: oklch(0.66 0.18 256);
-  --sidebar-primary-foreground: oklch(0.14 0.02 265);
-  --sidebar-accent: oklch(0.24 0.02 262);
-  --sidebar-accent-foreground: oklch(0.96 0.005 260);
-  --sidebar-border: oklch(0.26 0.015 265);
-  --sidebar-ring: oklch(0.66 0.18 256);
+  --background: #0b0d07;
+  --foreground: #f3f6ec;
+  --card: #14170f;
+  --card-foreground: #f3f6ec;
+  --popover: #171a12;
+  --popover-foreground: #f3f6ec;
+  --primary: #c8ff00;
+  --primary-foreground: #10150a;
+  --secondary: #1d2117;
+  --secondary-foreground: #f3f6ec;
+  --muted: #1d2117;
+  --muted-foreground: #a2a999;
+  --accent: #263010;
+  --accent-foreground: #c8ff00;
+  --brand-ink: #c8ff00;
+  --destructive: #fb7185;
+  --destructive-foreground: #1a0a0e;
+  --success: #4ade80;
+  --success-soft: #16301f;
+  --warning: #fbbf24;
+  --warning-soft: #302615;
+  --danger-soft: #331219;
+  --border: #272c1e;
+  --input: #2f3524;
+  --ring: #c8ff00;
+  --chart-1: #c8ff00;
+  --chart-2: #a3e635;
+  --chart-3: #4ade80;
+  --chart-4: #fbbf24;
+  --chart-5: #e2e8d5;
+  --sidebar: #0f1209;
+  --sidebar-foreground: #dfe4d4;
+  --sidebar-primary: #c8ff00;
+  --sidebar-primary-foreground: #10150a;
+  --sidebar-accent: #222a12;
+  --sidebar-accent-foreground: #f3f6ec;
+  --sidebar-border: #242a1c;
+  --sidebar-ring: #c8ff00;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist);
-  --font-display: var(--font-manrope);
-  --font-serif: var(--font-manrope);
+  --font-sans: var(--font-poppins);
+  --font-display: var(--font-poppins);
+  --font-serif: var(--font-poppins);
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --color-background: var(--background);
@@ -143,20 +147,39 @@
     font-feature-settings: "cv11", "ss01";
   }
   h1, h2, h3, .font-display {
-    font-family: var(--font-manrope), var(--font-geist), system-ui, sans-serif;
+    font-family: var(--font-poppins), system-ui, sans-serif;
+    font-weight: 800;
     letter-spacing: -0.02em;
   }
 }
 
 @layer utilities {
+  /* Lime reads poorly as text on white, so the gradient runs lime → brand ink. */
   .text-gradient {
-    background: linear-gradient(100deg, oklch(0.57 0.21 259), oklch(0.72 0.14 215));
+    background: linear-gradient(100deg, #8fb00c, #4f6b08);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .dark .text-gradient {
+    background: linear-gradient(100deg, #c8ff00, #86b800);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .bg-brand-gradient {
-    background: linear-gradient(135deg, oklch(0.57 0.21 259), oklch(0.66 0.16 225));
+    background: linear-gradient(135deg, #c8ff00, #a3e635);
+    color: #1e2702;
+  }
+  .bg-ink-gradient {
+    background: linear-gradient(135deg, #1f231a, #0b0d07);
+    color: #f3f6ec;
+  }
+  /* Brand lime fails contrast as text on light surfaces. `text-primary` therefore
+     resolves to the darker brand ink in light mode and to lime in dark mode,
+     while bg-primary / border-primary stay true lime. */
+  .text-primary {
+    color: var(--brand-ink);
   }
   .bg-grid {
     background-image: linear-gradient(to right, var(--border) 1px, transparent 1px),

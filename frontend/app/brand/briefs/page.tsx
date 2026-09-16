@@ -10,7 +10,7 @@ import { loadBriefs } from "@/components/brand/data"
 import { cap, platformLabel } from "@/components/brand/helpers"
 import { inr, shortDate, timeAgo } from "@/lib/format"
 
-export const metadata = { title: "Briefs · hustl." }
+export const metadata = { title: "Briefs" }
 
 const TABS = [
   { value: "live", label: "Live", status: "PUBLISHED" satisfies BriefStatus },

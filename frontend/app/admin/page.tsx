@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import { PageHeader } from "@/components/app/ui"
 import { AdminConsole } from "./_components/console"
 
-export const metadata = { title: "Trust & safety · hustl." }
+export const metadata = { title: "Trust & safety" }
 
 export default function AdminPage() {
   return (

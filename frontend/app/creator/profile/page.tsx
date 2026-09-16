@@ -6,7 +6,7 @@ import { ProfileForm } from "@/components/creator/profile-form"
 import { ErrorState } from "@/components/creator/states"
 import { getMe, load } from "../data"
 
-export const metadata = { title: "Profile builder · hustl." }
+export const metadata = { title: "Profile builder" }
 
 export default async function ProfilePage() {
   const result = await load(getMe)

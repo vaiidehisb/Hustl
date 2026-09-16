@@ -5,7 +5,7 @@ import { VerificationPanel } from "@/components/creator/verification-panel"
 import { ErrorState } from "@/components/creator/states"
 import { getMe, getSocialAccounts, getSocialProviders, getVerifications, load, soft } from "../data"
 
-export const metadata = { title: "Connect socials · hustl." }
+export const metadata = { title: "Connect socials" }
 
 const BENEFITS = [
   { icon: Sparkles, title: "Better matches", body: "Brief platforms and follower minimums are checked against the accounts on your profile." },

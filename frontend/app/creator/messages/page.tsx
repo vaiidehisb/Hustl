@@ -3,7 +3,7 @@ import { conversationForDealAction } from "@/app/actions/messages"
 import { Inbox } from "@/components/messaging/inbox"
 import { requireRole } from "@/lib/auth/session"
 
-export const metadata = { title: "Messages · hustl." }
+export const metadata = { title: "Messages" }
 
 export default async function CreatorMessagesPage({ searchParams }: { searchParams: Promise<{ deal?: string; c?: string }> }) {
   const user = await requireRole("CREATOR", "/creator/messages")

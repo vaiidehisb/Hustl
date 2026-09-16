@@ -11,7 +11,7 @@ import { monthLabel } from "@/components/creator/lib"
 import { inr, shortDate } from "@/lib/format"
 import { getCreatorOverview, getPaymentSummary, getPayoutAccount, getPayouts, load } from "../data"
 
-export const metadata = { title: "Earnings · hustl." }
+export const metadata = { title: "Earnings" }
 
 const PAYOUT_TONE = { PAID: "success", PENDING: "warning", ON_HOLD: "warning", FAILED: "danger" } as const
 const PAYOUT_LABEL = { PAID: "Paid", PENDING: "Pending", ON_HOLD: "On hold", FAILED: "Failed" } as const

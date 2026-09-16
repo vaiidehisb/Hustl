@@ -4,7 +4,7 @@ import { ErrorPanel } from "@/components/brand/error-panel"
 import { loadBrief } from "@/components/brand/data"
 import { isoToDate } from "@/components/brand/helpers"
 
-export const metadata = { title: "Edit brief · hustl." }
+export const metadata = { title: "Edit brief" }
 
 export default async function EditBriefPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

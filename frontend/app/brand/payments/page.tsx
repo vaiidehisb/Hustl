@@ -9,7 +9,7 @@ import { OUTFLOW_TYPES, TX_LABEL } from "@/components/brand/helpers"
 import { inr, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export const metadata = { title: "Payments & escrow · hustl." }
+export const metadata = { title: "Payments & escrow" }
 
 const ESCROW_STATUSES: DealSummary["status"][] = ["FUNDED", "IN_PROGRESS", "COMPLETED", "DISPUTED"]
 

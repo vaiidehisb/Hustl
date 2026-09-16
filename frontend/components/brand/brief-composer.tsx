@@ -382,7 +382,7 @@ export function BriefComposer({ briefId, initial, status }: { briefId?: string; 
             id="b-minf"
             type="number"
             min={0}
-            step={1000}
+            step={1}
             value={f.minFollowers}
             onChange={(e) => update("minFollowers", e.target.value, "minFollowers")}
             placeholder="0 = any"
@@ -415,7 +415,7 @@ export function BriefComposer({ briefId, initial, status }: { briefId?: string; 
             id="b-budget"
             type="number"
             min={1}
-            step={500}
+            step={1}
             value={f.budgetPerCreator}
             onChange={(e) => update("budgetPerCreator", e.target.value, "budgetPerCreator")}
             placeholder="25000"

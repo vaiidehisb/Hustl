@@ -10,7 +10,7 @@ import { inr, timeAgo } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { getMyApplications, load } from "../data"
 
-export const metadata = { title: "My applications · hustl." }
+export const metadata = { title: "My applications" }
 
 export default async function ApplicationsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: rawTab } = await searchParams

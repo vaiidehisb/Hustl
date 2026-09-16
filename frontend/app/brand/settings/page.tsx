@@ -7,7 +7,7 @@ import { BrandProfileForm, PlanCards, VerificationRequestForm } from "@/componen
 import { ErrorPanel } from "@/components/brand/error-panel"
 import { loadBrandProfile, loadMe, loadVerifications } from "@/components/brand/data"
 
-export const metadata = { title: "Settings · hustl." }
+export const metadata = { title: "Settings" }
 
 export default async function BrandSettingsPage() {
   const [profileRes, meRes, verificationsRes] = await Promise.all([loadBrandProfile(), loadMe(), loadVerifications()])

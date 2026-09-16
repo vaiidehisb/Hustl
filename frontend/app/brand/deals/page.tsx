@@ -11,7 +11,7 @@ import { nextStep, PAYMENT_MODE_LABEL } from "@/components/brand/helpers"
 import { inr, timeAgo } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export const metadata = { title: "Deals · hustl." }
+export const metadata = { title: "Deals" }
 
 const TABS: { value: string; label: string; statuses?: DealStatus[] }[] = [
   { value: "all", label: "All" },

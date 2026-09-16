@@ -8,7 +8,7 @@ import { SELF_REPORTED_LABEL, audienceTier, isInsufficient, platformLabel, score
 import { compact, pct, timeAgo } from "@/lib/format"
 import { getCreatorMetrics, getCreatorOverview, getMe, load, soft } from "../data"
 
-export const metadata = { title: "My analytics · hustl." }
+export const metadata = { title: "My analytics" }
 
 export default async function AnalyticsPage() {
   const [meResult, overviewResult] = await Promise.all([load(getMe), load(getCreatorOverview)])

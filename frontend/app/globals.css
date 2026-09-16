@@ -20,13 +20,14 @@
   --muted-foreground: #666d5f;
   --accent: #eefbc4;
   --accent-foreground: #3f5406;
-  /* Lime is too light for text on white — this is the readable brand ink. */
-  --brand-ink: #708e0b;
+  /* Lime is too light for text on white — this is the readable brand ink.
+     5.1:1 on the card surface, so links and emphasis pass AA at body sizes. */
+  --brand-ink: #5c7409;
   --destructive: #e11d48;
   --destructive-foreground: #ffffff;
   --success: #238b49;
   --success-soft: #e7f6ec;
-  --warning: #b45309;
+  --warning: #a04a08;
   --warning-soft: #fdf0dd;
   --danger-soft: #fdeaee;
   --border: #e4e7e0;
